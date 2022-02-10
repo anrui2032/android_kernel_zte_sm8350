@@ -288,6 +288,12 @@ struct dsi_panel_ops {
 	int (*parse_power_cfg)(struct dsi_panel *panel);
 };
 
+#define BRIGHTNESS_ALPHA_PAIR_LEN 2
+struct brightness_alpha_pair {
+	u32 brightness;
+	u32 alpha;
+};
+
 struct dsi_panel {
 	const char *name;
 	const char *type;
@@ -358,6 +364,9 @@ struct dsi_panel {
 	struct zte_lcd_ctrl_data *zte_lcd_ctrl;
 #endif
 /* zte add common function for lcd module end */
+
+	struct brightness_alpha_pair *fod_dim_lut;
+	unsigned int fod_dim_lut_len;
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
