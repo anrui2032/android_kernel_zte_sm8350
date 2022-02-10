@@ -368,6 +368,8 @@ struct dsi_panel {
 
 	struct brightness_alpha_pair *fod_dim_lut;
 	unsigned int fod_dim_lut_len;
+	u8 fod_dim_alpha;
+	bool fod_hbm_enabled;
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
@@ -512,4 +514,7 @@ int zte_mipi_dsi_set_real_bl_level(struct mipi_dsi_device *dsi,	u16 brightness);
 #ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
 int zte_dsi_panel_set_fps(struct dsi_panel *panel,int fps);
 #endif
+
+int dsi_panel_set_fod_hbm(struct dsi_panel *panel, bool status);
+
 #endif /* _DSI_PANEL_H_ */
