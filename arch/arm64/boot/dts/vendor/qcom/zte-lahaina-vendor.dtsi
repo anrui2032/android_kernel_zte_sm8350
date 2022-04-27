@@ -461,11 +461,16 @@
 	};
 };
 
-&dai_mi2s0 {
+&dai_mi2s0_rx {
 	compatible = "qcom,msm-dai-q6-mi2s";
 	qcom,msm-dai-q6-mi2s-dev-id = <0>;
-	qcom,msm-mi2s-rx-lines = <2>;
-	qcom,msm-mi2s-tx-lines = <1>;
+	qcom,msm-mi2s-lines = <2>;
+};
+
+&dai_mi2s0_tx {
+	compatible = "qcom,msm-dai-q6-mi2s";
+	qcom,msm-dai-q6-mi2s-dev-id = <1>;
+	qcom,msm-mi2s-lines = <1>;
 };
 
 &q6core {
