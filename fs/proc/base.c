@@ -100,6 +100,10 @@
 #include "fd.h"
 
 #include "../../lib/kstrtox.h"
+#ifdef CONFIG_UID_PAGELIST
+#include <linux/hotness.h>
+#include <linux/rmap.h>
+#endif
 
 /* NOTE:
  *	Implementing inode permission operations in /proc is almost
@@ -1093,10 +1097,12 @@ static int __set_oom_adj(struct file *file, int oom_adj, bool legacy)
 		}
 	}
 
-	task->signal->oom_score_adj = oom_adj;
-	if (!legacy && has_capability_noaudit(current, CAP_SYS_RESOURCE))
-		task->signal->oom_score_adj_min = (short)oom_adj;
-	trace_oom_score_adj_update(task);
+	if (task->tgid == task->pid) {
+		task->signal->oom_score_adj = oom_adj;
+		if (!legacy && has_capability_noaudit(current, CAP_SYS_RESOURCE))
+			task->signal->oom_score_adj_min = (short)oom_adj;
+		trace_oom_score_adj_update(task);
+	}
 
 	if (mm) {
 		struct task_struct *p;
@@ -1465,6 +1471,108 @@ static const struct file_operations proc_pid_sched_operations = {
 	.release	= single_release,
 };
 
+#endif
+
+#ifdef CONFIG_UID_PAGELIST
+static ssize_t hotness_read(struct file *file, char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	struct task_struct *task = get_proc_task(file_inode(file));
+	char buffer[PROC_NUMBUF];
+	size_t len;
+	int task_hotness;
+
+	if (!task)
+		return -ESRCH;
+
+	task_hotness = task->hotness;
+
+	put_task_struct(task);
+
+	len = snprintf(buffer, sizeof(buffer), "%d\n", task_hotness);
+	return simple_read_from_buffer(buf, count, ppos, buffer, len);
+}
+static struct cgroup_subsys_state *
+task_get_css_noretry(struct task_struct *task, int subsys_id)
+{
+	struct cgroup_subsys_state *css;
+
+	rcu_read_lock();
+	css = task_css(task, subsys_id);
+
+	if (unlikely(!css_tryget_online(css))) {
+		rcu_read_unlock();
+		return NULL;
+	}
+	rcu_read_unlock();
+	return css;
+}
+static ssize_t hotness_write(struct file *file, const char __user *buf,
+				size_t count, loff_t *ppos)
+{
+	struct task_struct *task;
+	char buffer[PROC_NUMBUF];
+	int task_hotness;
+	int err;
+	uid_t uid;
+
+	memset(buffer, 0, sizeof(buffer));
+
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+	if (copy_from_user(buffer, buf, count)) {
+		err = -EFAULT;
+		goto out;
+	}
+
+	err = kstrtoint(strstrip(buffer), 0, &task_hotness);
+	if (err)
+		goto out;
+
+	task = get_proc_task(file_inode(file));
+	if (!task) {
+		err = -ESRCH;
+		goto out;
+	}
+
+	task->hotness = task_hotness;
+	uid = __task_cred(task)->user->uid.val;
+
+	if (!task_hotness) {
+		struct cgroup_subsys_state *pos;
+		struct css_task_iter it;
+		struct task_struct *tsk;
+		struct cgroup_subsys_state *parent;
+		struct cgroup_subsys_state *css;
+
+		css = task_get_css_noretry(task, cpuacct_cgrp_id);
+		if (css) {
+			parent = css->parent;
+			rcu_read_lock();
+			css_for_each_child(pos, parent) {
+				css_task_iter_start(&pos->cgroup->self, 0, &it);
+				while ((tsk = css_task_iter_next(&it)))
+					tsk->hotness = 0;
+				css_task_iter_end(&it);
+			}
+			rcu_read_unlock();
+		}
+		reclaim_pages_from_uid_list(uid);
+		delete_uid_hotness_node(uid);
+	} else {
+		insert_uid_hotness_node(task_hotness, uid);
+	}
+
+	put_task_struct(task);
+
+out:
+	return err < 0 ? err : count;
+}
+
+static const struct file_operations proc_hotness_operations = {
+	.read		= hotness_read,
+	.write		= hotness_write,
+};
 #endif
 
 /*
@@ -3375,6 +3483,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("timers",	  S_IRUGO, proc_timers_operations),
 #endif
 	REG("timerslack_ns", S_IRUGO|S_IWUGO, proc_pid_set_timerslack_ns_operations),
+#ifdef CONFIG_UID_PAGELIST
+	REG("hotness", 0666, proc_hotness_operations),
+#endif
 #ifdef CONFIG_LIVEPATCH
 	ONE("patch_state",  S_IRUSR, proc_pid_patch_state),
 #endif
