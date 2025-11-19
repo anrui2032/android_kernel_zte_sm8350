@@ -589,18 +589,22 @@ static int gic_suspend(void)
 	return 0;
 }
 
+extern void print_irq_info(int i);
 static void gic_show_resume_irq(struct gic_chip_data *gic)
 {
 	unsigned int i;
 	u32 enabled;
 	u32 pending[32];
 	void __iomem *base = gic_data.dist_base;
+	u32 irqenabled[32] = {0};
 
 	if (!msm_show_resume_irq_mask)
+		pr_warn("%s: msm_show_resume_irq_mask=%d\n", __func__, msm_show_resume_irq_mask);
 		return;
 
 	for (i = 0; i * 32 < GIC_LINE_NR; i++) {
 		enabled = readl_relaxed(base + GICD_ICENABLER + i * 4);
+		irqenabled[i] = enabled;
 		pending[i] = readl_relaxed(base + GICD_ISPENDR + i * 4);
 		pending[i] &= enabled;
 	}
@@ -624,6 +628,25 @@ static void gic_show_resume_irq(struct gic_chip_data *gic)
 
 		pr_warn("%s: irq:%d hwirq:%u triggered %s\n",
 			 __func__, irq, i, name);
+		print_irq_info(irq);
+	}
+
+	if (false) {
+		pr_warn("%s: show all enable-wakeup irq:\n", __func__);
+		for (i = find_first_bit((unsigned long *)irqenabled, gic->ppi_nr);
+			i < gic->ppi_nr;
+			i = find_next_bit((unsigned long *)irqenabled, gic->ppi_nr, i+1)) {
+			unsigned int irq = irq_find_mapping(gic->domain, i);
+			struct irq_desc *desc = irq_to_desc(irq);
+			const char *name = "null";
+
+			if (desc == NULL)
+				name = "stray irq";
+			else if (desc->action && desc->action->name)
+				name = desc->action->name;
+			if ((desc != NULL) && (desc->wake_depth > 0))
+				pr_info("zte_pm:enable irq=%d, wake_depth=%d, name=%s\n", irq, desc->wake_depth, name);
+			}
 	}
 }
 
