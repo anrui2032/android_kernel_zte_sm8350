@@ -36,8 +36,13 @@ static inline bool is_migrate_isolate(int migratetype)
 bool has_unmovable_pages(struct zone *zone, struct page *page, int count,
 			 int migratetype, int flags);
 void set_pageblock_migratetype(struct page *page, int migratetype);
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+int move_freepages_block(struct zone *zone, struct page *page,
+				int migratetype, int *num_movable, int old_mt);
+#else
 int move_freepages_block(struct zone *zone, struct page *page,
 				int migratetype, int *num_movable);
+#endif
 
 /*
  * Changes migrate type in [start_pfn, end_pfn) to be MIGRATE_ISOLATE.

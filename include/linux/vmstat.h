@@ -8,6 +8,9 @@
 #include <linux/vm_event_item.h>
 #include <linux/atomic.h>
 #include <linux/static_key.h>
+#ifdef CONFIG_UID_PAGELIST
+#include <linux/hotness.h>
+#endif
 
 extern int sysctl_stat_interval;
 
@@ -377,6 +380,10 @@ static inline void __mod_zone_freepage_state(struct zone *zone, int nr_pages,
 	__mod_zone_page_state(zone, NR_FREE_PAGES, nr_pages);
 	if (is_migrate_cma(migratetype))
 		__mod_zone_page_state(zone, NR_FREE_CMA_PAGES, nr_pages);
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	if (is_migrate_unmov_sec(migratetype))
+		__mod_zone_page_state(zone, NR_FREE_UNMOV_SEC_POOL, nr_pages);
+#endif
 }
 
 extern const char * const vmstat_text[];

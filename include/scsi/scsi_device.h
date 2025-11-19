@@ -238,6 +238,13 @@ struct scsi_device {
 	ANDROID_KABI_RESERVE(4);
 } __attribute__((aligned(sizeof(unsigned long))));
 
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+struct ufs_health {
+	u32 bDeviceLifeTimeEstA;
+	u32 bDeviceLifeTimeEstB;
+};
+#endif
+
 #define	to_scsi_device(d)	\
 	container_of(d, struct scsi_device, sdev_gendev)
 #define	class_to_sdev(d)	\
