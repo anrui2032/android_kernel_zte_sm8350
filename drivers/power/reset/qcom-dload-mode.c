@@ -16,6 +16,9 @@
 #include <linux/qcom_scm.h>
 #include <soc/qcom/minidump.h>
 
+#include <vendor/soc/qcom/debug_policy.h>
+#include <linux/input/qpnp-power-on.h>
+
 enum qcom_download_dest {
 	QCOM_DOWNLOAD_DEST_UNKNOWN = -1,
 	QCOM_DOWNLOAD_DEST_QPST = 0,
@@ -371,6 +374,16 @@ static int qcom_dload_probe(struct platform_device *pdev)
 	poweroff->dload_dest_addr = map_prop_mem("qcom,msm-imem-dload-type");
 	store_kaslr_offset();
 	check_pci_edl(pdev->dev.of_node);
+
+#ifdef CONFIG_ANDROID_ZLOG
+#ifdef CONFIG_ANDROID_ZLOG_BUFFER
+	if (!is_kernel_log_driver_enabled()) {
+		pr_info("%s: disable dump and config hard reset\n", __func__);
+		enable_dump = 0;
+		qpnp_pon_system_pwr_off(PON_POWER_OFF_HARD_RESET);
+	}
+#endif
+#endif
 
 	msm_enable_dump_mode(enable_dump);
 	if (!enable_dump)
