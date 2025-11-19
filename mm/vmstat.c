@@ -1125,7 +1125,13 @@ const char * const vmstat_text[] = {
 #if IS_ENABLED(CONFIG_ZSMALLOC)
 	"nr_zspages",
 #endif
+#ifdef CONFIG_UID_PAGELIST
+	"nr_uid_pages",
+#endif
 	"nr_free_cma",
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	"nr_free_unmov_sec",
+#endif
 
 	/* enum numa_stat_item counters */
 #ifdef CONFIG_NUMA
@@ -1299,6 +1305,12 @@ const char * const vmstat_text[] = {
 #ifdef CONFIG_SWAP
 	"swap_ra",
 	"swap_ra_hit",
+#endif
+#ifdef CONFIG_UID_PAGELIST
+	TEXTS_FOR_ZONES("allocstall_pri1")
+	TEXTS_FOR_ZONES("allocstall_pri2")
+	TEXTS_FOR_ZONES("allocstall_pri3")
+	TEXTS_FOR_ZONES("allocstall_pri4")
 #endif
 #endif /* CONFIG_VM_EVENTS_COUNTERS */
 };
@@ -1663,6 +1675,71 @@ static const struct seq_operations zoneinfo_op = {
 	.show	= zoneinfo_show,
 };
 
+#ifdef CONFIG_UID_PAGELIST
+static int uid_pages_info_show(struct seq_file *m, void *arg)
+{
+	int i;
+	struct uid_node **table;
+	struct list_head *pos;
+	unsigned long nr_pages;
+	struct mem_cgroup *memcg;
+	pg_data_t *pgdat = (pg_data_t *)arg;
+
+	seq_puts(m, "uid hotness list:\n");
+	print_uid_hotness_list(m);
+	seq_puts(m, "uid\tpages\n");
+
+	memcg = mem_cgroup_iter(NULL, NULL, NULL);
+	do {
+		struct lruvec *lruvec = mem_cgroup_lruvec(pgdat, memcg);
+
+		if (!lruvec)
+			goto next;
+		table = lruvec->uid_hash;
+		if (!table)
+			goto next;
+		for (i = 0; i < (1 << 5); i++) {
+
+			struct uid_node *node = rcu_dereference(table[i]);
+
+			if (!node)
+				continue;
+			do {
+				nr_pages = 0;
+				list_for_each(pos, &node->page_cache_list)
+					nr_pages++;
+				seq_printf(m, "%d\t%lu\n",
+					node->uid,
+					nr_pages);
+			} while ((node = rcu_dereference(node->next)) != NULL);
+		}
+next:
+		memcg = mem_cgroup_iter(NULL, memcg, NULL);
+	} while (memcg);
+	seq_putc(m, '\n');
+
+	return 0;
+}
+
+static const struct seq_operations uid_pages_info_op = {
+	.start	= frag_start,
+	.next	= frag_next,
+	.stop	= frag_stop,
+	.show	= uid_pages_info_show,
+};
+
+static int uid_pages_info_open(struct inode *inode, struct file *file)
+{
+	return seq_open(file, &uid_pages_info_op);
+}
+
+static const struct file_operations proc_uid_pages_info_file_operations = {
+	.open		= uid_pages_info_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
+};
+#endif
 enum writeback_stat_item {
 	NR_DIRTY_THRESHOLD,
 	NR_DIRTY_BG_THRESHOLD,
@@ -1998,6 +2075,10 @@ void __init init_mm_internals(void)
 	proc_create_seq("pagetypeinfo", 0400, NULL, &pagetypeinfo_op);
 	proc_create_seq("vmstat", 0444, NULL, &vmstat_op);
 	proc_create_seq("zoneinfo", 0444, NULL, &zoneinfo_op);
+#endif
+#ifdef CONFIG_UID_PAGELIST
+	proc_create("uid_pages_info", 0444, NULL,
+			&proc_uid_pages_info_file_operations);
 #endif
 }
 

@@ -76,7 +76,11 @@ out:
 		set_pageblock_migratetype(page, MIGRATE_ISOLATE);
 		zone->nr_isolate_pageblock++;
 		nr_pages = move_freepages_block(zone, page, MIGRATE_ISOLATE,
+#ifndef CONFIG_BIGGER_ORDER_UNMOV
 									NULL);
+#else
+							NULL, migratetype);
+#endif
 
 		__mod_zone_freepage_state(zone, -nr_pages, mt);
 	}
@@ -130,7 +134,12 @@ static void unset_migratetype_isolate(struct page *page, unsigned migratetype)
 	 * pageblock scanning for freepage moving.
 	 */
 	if (!isolated_page) {
+#ifndef CONFIG_BIGGER_ORDER_UNMOV
 		nr_pages = move_freepages_block(zone, page, migratetype, NULL);
+#else
+		nr_pages = move_freepages_block(zone, page, migratetype, NULL,
+							MIGRATE_ISOLATE);
+#endif
 		__mod_zone_freepage_state(zone, nr_pages, migratetype);
 	}
 	set_pageblock_migratetype(page, migratetype);
