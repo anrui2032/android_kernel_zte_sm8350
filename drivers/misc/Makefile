@@ -47,6 +47,7 @@ obj-$(CONFIG_LATTICE_ECP3_CONFIG)	+= lattice-ecp3-config.o
 obj-$(CONFIG_SRAM)		+= sram.o
 obj-$(CONFIG_SRAM_EXEC)		+= sram-exec.o
 obj-y				+= mic/
+obj-$(CONFIG_SAFECHIP_VEB_A5)	+= veb_a5spi_driver/
 obj-$(CONFIG_GENWQE)		+= genwqe/
 obj-$(CONFIG_ECHO)		+= echo/
 obj-$(CONFIG_HDCP_QSEECOM)	+= hdcp_qseecom.o
