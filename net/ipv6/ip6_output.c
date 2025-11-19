@@ -229,7 +229,7 @@ int ip6_output(struct net *net, struct sock *sk, struct sk_buff *skb)
 		kfree_skb(skb);
 		return 0;
 	}
-
+	xt_socket_get6_print(skb, 0); /* ZTE_LC_IP_DEBUG, 20170418 improved */
 	return NF_HOOK_COND(NFPROTO_IPV6, NF_INET_POST_ROUTING,
 			    net, sk, skb, NULL, dev,
 			    ip6_finish_output,

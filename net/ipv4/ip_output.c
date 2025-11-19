@@ -68,6 +68,7 @@
 #include <net/protocol.h>
 #include <net/route.h>
 #include <net/xfrm.h>
+#include <net/net_log.h> /* ZTE_LC_IP_DEBUG */
 #include <linux/skbuff.h>
 #include <net/sock.h>
 #include <net/arp.h>
@@ -88,6 +89,10 @@ ip_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
 	    unsigned int mtu,
 	    int (*output)(struct net *, struct sock *, struct sk_buff *));
 
+/* ZTE_LC_IP_DEBUG, 20130509 start */
+extern int tcp_socket_debugfs;
+extern int ip_log_pm; /* ZTE_PM_TCP  lcf@20160523 */
+/*ZTE_LC_IP_DEBUG, 20130509 end*/
 /* Generate a checksum for an outgoing IP datagram. */
 void ip_send_check(struct iphdr *iph)
 {
@@ -437,6 +442,58 @@ int ip_output(struct net *net, struct sock *sk, struct sk_buff *skb)
 	skb->dev = dev;
 	skb->protocol = htons(ETH_P_IP);
 
+	/* ZTE_LC_IP_DEBUG, 20130509 start */
+	/* for IP unicast */
+	if ((tcp_socket_debugfs & TCP_IP_LOG_ENABLE) || ip_log_pm == 1) { /* ZTE_PM_TCP  lcf@20160523 */
+		const struct iphdr *iph;
+		kuid_t uid;
+
+		iph = ip_hdr(skb);
+		if (iph->daddr != htonl(INADDR_LOOPBACK)) {
+			uid = sk ? sk->sk_uid : GLOBAL_ROOT_UID;
+			if (!uid_valid(uid))
+				uid = GLOBAL_ROOT_UID;
+
+			if (iph->protocol == IPPROTO_TCP) {
+				struct tcphdr *th = (struct tcphdr *)(skb->data + (iph->ihl << 2));
+				/* ignore checking tcp pkts correct, value of uid sometimes too large */
+				pr_log_info("[IP] TCP SEND len=%d, uid=%d, Gpid:%d (%s), (%pI4:%hu -> %pI4:%hu), F:%d%d%d%d%d%d%d%d\n",
+					ntohs(iph->tot_len),
+					uid.val,
+					current->group_leader->pid, current->group_leader->comm,
+					&iph->saddr, ntohs(th->source),
+					&iph->daddr, ntohs(th->dest),
+					th->cwr, th->ece, th->urg, th->ack, th->psh, th->rst, th->syn, th->fin);
+			} else if (iph->protocol == IPPROTO_UDP) {
+				struct udphdr *uh = (struct udphdr *)(skb->data + (iph->ihl << 2));
+				/* ignore checking udp pkts correct */
+				pr_log_info("[IP] UDP SEND len=%d, uid=%d, Gpid:%d (%s), (%pI4:%hu -> %pI4:%hu)\n",
+					ntohs(iph->tot_len),
+					uid.val,
+					current->group_leader->pid, current->group_leader->comm,
+					&iph->saddr, ntohs(uh->source),
+					&iph->daddr, ntohs(uh->dest));
+			} else if (iph->protocol == IPPROTO_ICMP) {
+				struct icmphdr *icmph = (struct icmphdr *)(skb->data + (iph->ihl << 2));
+				/* ignore checking icmp pkts correct */
+				pr_log_info("[IP] ICMP SEND len=%d, uid=%d, Gpid:%d (%s), (%pI4 -> %pI4) , T: %d,C: %d\n",
+					ntohs(iph->tot_len),
+					uid.val,
+					current->group_leader->pid, current->group_leader->comm,
+					&iph->saddr,
+					&iph->daddr,
+					icmph->type, icmph->code);
+			} else
+				pr_log_info("[IP] SEND len=%d, uid=%d, Gpid:%d (%s), (%pI4 -> %pI4), TP = %d\n",
+					ntohs(iph->tot_len),
+					uid.val,
+					current->group_leader->pid, current->group_leader->comm,
+					&iph->saddr,
+					&iph->daddr,
+					iph->protocol);
+		}
+	}
+	/* ZTE_LC_IP_DEBUG, 20130509 end */
 	return NF_HOOK_COND(NFPROTO_IPV4, NF_INET_POST_ROUTING,
 			    net, sk, skb, NULL, dev,
 			    ip_finish_output,

@@ -48,6 +48,7 @@
 #include <net/inet6_hashtables.h>
 #include <net/busy_poll.h>
 #include <net/sock_reuseport.h>
+#include <net/net_log.h> /* ZTE_LC_IP_DEBUG */
 
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -927,6 +928,18 @@ int __udp6_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	if (sk) {
 		if (!uh->check && !udp_sk(sk)->no_check6_rx)
 			goto report_csum_error;
+
+		/* ZTE_LC_TCP_DEBUG, 20170418 improved */
+		if (tcp_socket_debugfs & TCP_IPV6_LOG_ENABLE) {
+			if (!ip_hdr(skb))
+				pr_log_info("[IPv6] UDP RCV len=%d, "
+					"Gpid:%d (%s), (%pI6 :%hu <- %pI6 :%hu)\n",
+					ulen,
+					current->group_leader->pid, current->group_leader->comm,
+					&ip_hdr(skb)->daddr, ntohs(uh->dest),
+					&ip_hdr(skb)->saddr, ntohs(uh->source));
+		}
+		/* ZTE_LC_TCP_DEBUG end */
 		return udp6_unicast_rcv_skb(sk, skb, uh);
 	}
 
