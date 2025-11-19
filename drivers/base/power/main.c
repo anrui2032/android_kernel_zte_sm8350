@@ -1080,9 +1080,18 @@ void dpm_resume(pm_message_t state)
 		if (!is_async(dev)) {
 			int error;
 
+			/* zte_pm ++++ */
+			unsigned long jif = 0;
 			mutex_unlock(&dpm_list_mtx);
+			jif = jiffies;
 
 			error = device_resume(dev, state, false);
+			if ((jiffies - jif) > 1) {
+				pr_err("PM: devices of %s exit device_resume() %lu ms\n",
+						dev_name(dev), (jiffies - jif) * 1000 / HZ);
+			}
+			/* zte_pm ---- */
+
 			if (error) {
 				suspend_stats.failed_resume++;
 				dpm_save_failed_step(SUSPEND_RESUME);
