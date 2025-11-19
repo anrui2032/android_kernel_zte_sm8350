@@ -1,0 +1,23 @@
+#
+# printk_ext driver
+#
+config PRINTK_EXT
+    bool "/proc/kmsg_ext support"
+    default n
+    help
+      Say Y here if you want to support the /proc/kmsg_ext. In
+      this case, carve out a block of memory to store a specific
+      log, rather than store it in the printk's buffer.
+
+config TIME_FORMAT_ZTELOG
+    bool "ZTE kernel log format"
+    default n
+    help
+      Say Y here if you want to include process_id,pid,comm and time information
+      in __log_buf record.
+
+config PARSE_LOGBUF_FROM_DUMP
+    bool "split __log_buf info from dump"
+    default n
+    help
+      Say Y here if you want to split __log_buf information from dump.

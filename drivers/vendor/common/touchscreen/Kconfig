@@ -1,0 +1,70 @@
+#
+# Touchscreen driver configuration
+#
+menuconfig TOUCHSCREEN_VENDOR
+	bool "Touchscreens"
+	default n
+	help
+	  Say Y here, and a list of supported touchscreens will be displayed.
+	  This option doesn't affect the kernel.
+
+	  If unsure, say n.
+
+if TOUCHSCREEN_VENDOR
+
+source "drivers/vendor/common/touchscreen/focaltech_touch_v3/Kconfig"
+source "drivers/vendor/common/touchscreen/hxchipset/Kconfig"
+source "drivers/vendor/common/touchscreen/hxchipset_v2/Kconfig"
+source "drivers/vendor/common/touchscreen/synaptics_2.7/Kconfig"
+source "drivers/vendor/common/touchscreen/gt1x_driver/Kconfig"
+source "drivers/vendor/common/touchscreen/tlsc6x_v2/Kconfig"
+source "drivers/vendor/common/touchscreen/focaltech_touch_V2_2/Kconfig"
+source "drivers/vendor/common/touchscreen/chipone_tddi/Kconfig"
+source "drivers/vendor/common/touchscreen/hynitron/Kconfig"
+source "drivers/vendor/common/touchscreen/synaptics_tcm/Kconfig"
+source "drivers/vendor/common/touchscreen/ilitek/Kconfig"
+source "drivers/vendor/common/touchscreen/ilitek_tddi_9881x/Kconfig"
+source "drivers/vendor/common/touchscreen/chipone_ts/Kconfig"
+source "drivers/vendor/common/touchscreen/gtx8_zte/Kconfig"
+source "drivers/vendor/common/touchscreen/tlsc6x_v3/Kconfig"
+source "drivers/vendor/common/touchscreen/NVT_Touch_HostDL/Kconfig"
+
+config TS_FIRMWARE
+	string "config board firmware folder"
+
+config TP_BSC_CALIBRATION
+        bool "tp bsc calibration, synaptics_tcm driver need this node"
+		default n
+		help
+		This enables tp bsc calibration.
+
+config TP_DETECT_BY_LCDINFO
+        bool "tp ic detected by lcd information"
+		default n
+		help
+		This enables support for tp ic detected by lcd information.
+
+config DRM_PANEL_NOTIFIER
+	bool "add qcom drm panel support"
+	default n
+	help
+	  Say Y here to enable debug tools.
+
+	  If unsure, say N.
+
+config TPD_UFP_MAC
+	bool "tp under fingerprint status machine"
+	default n
+	help
+	  Say Y here if you want to have a under fingerprint status machine
+	  If unsure, say N.
+config SCREEN_ON_TEMP_SUPPORT
+	bool "lcd has a temp on when off to aod"
+	depends on TPD_UFP_MAC
+	default n
+	help
+		Say y here if your lcd has a temp on when off to aod
+		if unsure, say n.
+
+endif
+

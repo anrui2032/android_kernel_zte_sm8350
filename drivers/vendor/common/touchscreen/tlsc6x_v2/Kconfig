@@ -1,0 +1,16 @@
+#
+# TLSC6X_V2 Touchscreen driver configuration
+#
+
+config TOUCHSCREEN_TLSC6X_V2
+	bool "Focaltech Touchscreen"
+		depends on I2C
+		default n
+		help
+		  Say Y here if you have tlsc6x touch panel.
+		  If unsure, say N.
+
+if TOUCHSCREEN_TLSC6X_V2
+config CHSC_CHIPS
+	string "config tlsc chip folder"
+endif

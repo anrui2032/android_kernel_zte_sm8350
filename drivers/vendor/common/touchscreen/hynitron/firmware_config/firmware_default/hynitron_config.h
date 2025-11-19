@@ -1,0 +1,40 @@
+#ifndef __HYNITRON_CONFIG_H__
+#define __HYNITRON_CONFIG_H__
+
+#define HYN_DRIVER_VERSION      "HYN_CY_Spreadtrum7731E_8.1_V1.1_20190121"
+#define HYN_PROJECT_ID          "CPH_1908027_CST836U_HYN_HCTP55170_A3_ZET"
+
+#define HYN_IIC_REISTER_DRIVER_STATIC			1
+
+#define HYN_EN_AUTO_UPDATE						1
+#define HYN_EN_AUTO_UPDATE_CST78xx              1
+#define ANDROID_TOOL_SURPORT		            1
+#define SYSFS_DEBUG								1
+#define HYN_IIC_TRANSFER_LIMIT					1
+#define	MULTI_PROTOCOL_TYPE_B					1
+#define HYN_PRESSURE_ENABLE						0
+
+/* #define HYNITRON_TP_PROC_SELF_TEST			     */
+#define TP_PROXIMITY_SENSOR
+/* #define HYN_DRV_TOUCHSCREEN_GESTURE_WAKEUP */
+/* #define HYN_CTL_IIC */
+#define HYN_GPIO_TOUCH_IRQ		0
+#define HYN_GPIO_TOUCH_RESET	0
+#define HYN_TP_MAX_X			720
+#define HYN_TP_MAX_Y			1440
+#define	TS_MAX_FINGER			2
+
+#define HYNITRIN_TS_NAME		"hynitron_ts"
+#define HYNITRIN_TS_ADDR		0x15
+#define	USE_WAIT_QUEUE			1
+#define	USE_WORK_QUEUE			0
+#define	HYN_PACKET_LENGTH		128
+
+#define HYN_MAX_NODE_SIZE  48
+#define HYN_ALL_CHANNEL_NUM 40
+
+#define HYN_MODULE_ID 0x00
+
+#define HYN_UPGRADE_FW_FILE	""
+#endif
+

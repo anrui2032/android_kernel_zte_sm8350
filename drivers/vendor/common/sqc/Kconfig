@@ -1,0 +1,8 @@
+
+menuconfig VENDOR_SQC_CHARGER
+	bool "zte power policy"
+	default n
+	help
+	  Say Y here, if supported zte sqc charger
+
+
