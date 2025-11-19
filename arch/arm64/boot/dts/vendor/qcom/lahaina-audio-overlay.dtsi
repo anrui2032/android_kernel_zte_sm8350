@@ -91,6 +91,7 @@
 				qcom,codec-name = "swr-dmic.04";
 				qcom,swr-dmic-supply = <3>;
 				qcom,wcd-handle = <&wcd938x_codec>;
+				status = "disabled";
 			};
 
 			swr_dmic_03: dmic_swr@58350222 {
@@ -100,6 +101,7 @@
 				qcom,codec-name = "swr-dmic.03";
 				qcom,swr-dmic-supply = <1>;
 				qcom,wcd-handle = <&wcd938x_codec>;
+				status = "disabled";
 			};
 
 			swr_dmic_02: dmic_swr@58350221 {
@@ -109,6 +111,7 @@
 				qcom,codec-name = "swr-dmic.02";
 				qcom,swr-dmic-supply = <1>;
 				qcom,wcd-handle = <&wcd938x_codec>;
+				status = "disabled";
 			};
 
 			swr_dmic_01: dmic_swr@58350220 {
@@ -118,6 +121,7 @@
 				qcom,codec-name = "swr-dmic.01";
 				qcom,swr-dmic-supply = <3>;
 				qcom,wcd-handle = <&wcd938x_codec>;
+				status = "disabled";
 			};
 		};
 	};
@@ -159,6 +163,8 @@
 				reg = <0x01 0xf0170220>;
 				swr-slave-supply = <&hap_swr_slave_reg>;
 				qcom,rx_swr_ch_map = <0 0x01 0x01 0 PCM_OUT1>;
+				qcom,hpwr-supply = <&BOB>;
+				qcom,hpwr-voltage-mv = <3600>;
 			};
 			wcd938x_rx_slave: wcd938x-rx-slave {
 				compatible = "qcom,wcd938x-slave";
@@ -210,6 +216,7 @@
 				qcom,cdc-vdd-1p8-current = <20000>;
 				qcom,cdc-static-supplies = "cdc-vdd-1p8";
 				qcom,wsa-prefix = "SpkrLeft";
+				status = "disabled";
 			};
 
 			wsa883x_0222: wsa883x@02170222 {
@@ -223,6 +230,7 @@
 				qcom,cdc-vdd-1p8-current = <20000>;
 				qcom,cdc-static-supplies = "cdc-vdd-1p8";
 				qcom,wsa-prefix = "SpkrRight";
+				status = "disabled";
 			};
 		};
 	};
@@ -267,11 +275,11 @@
 		qcom,cdc-vdd-buck-current = <650000>;
 
 		cdc-vdd-mic-bias-supply = <&BOB>;
-		qcom,cdc-vdd-mic-bias-voltage = <3296000 3296000>;
+		qcom,cdc-vdd-mic-bias-voltage = <3296000 3960000>;
 		qcom,cdc-vdd-mic-bias-current = <30000>;
 
 		qcom,cdc-micbias1-mv = <1800>;
-		qcom,cdc-micbias2-mv = <1800>;
+		qcom,cdc-micbias2-mv = <2700>;
 		qcom,cdc-micbias3-mv = <1800>;
 		qcom,cdc-micbias4-mv = <1800>;
 

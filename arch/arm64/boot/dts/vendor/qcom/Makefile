@@ -1,4 +1,5 @@
 ifneq ($(CONFIG_ARCH_QTI_VM), y)
+ifneq ($(CONFIG_ARCH_NUBIA_NX667J), y)
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 dtbo-$(CONFIG_ARCH_LAHAINA) += lahaina-rumi-overlay.dtbo \
 	lahaina-mtp-overlay.dtbo \
@@ -561,6 +562,17 @@ dtb-$(CONFIG_ARCH_DIREWOLF) += direwolf-ivi-rumi.dtb \
 	direwolf-ivi-adp-star.dtb \
 	direwolf-adas-rumi.dtb \
 	direwolf-adas-adp-star.dtb
+endif
+endif
+
+ifeq ($(CONFIG_ARCH_NUBIA_NX667J), y)
+ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY), y)
+dtbo-$(CONFIG_ARCH_LAHAINA) += lahaina-mtp-v2.1-overlay-NX667J.dtbo
+lahaina-mtp-v2.1-overlay-NX667J.dtbo-base := lahaina.dtb lahaina-v2.dtb \
+					lahaina-v2.1.dtb
+else
+dtb-$(CONFIG_ARCH_LAHAINA) += lahaina-mtp-v2.1-NX667J.dtb
+endif
 endif
 
 always		:= $(dtb-y)

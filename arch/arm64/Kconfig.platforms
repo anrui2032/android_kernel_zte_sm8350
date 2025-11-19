@@ -195,6 +195,13 @@ config ARCH_LAHAINA
 	  LAHAINA chipset. If you do not wish to build a kernel that
 	  runs on this chipset or if you are unsure, say 'N' here.
 
+config ARCH_NUBIA_NX667J
+	bool "NX667J Board"
+	depends on ARCH_LAHAINA
+	help
+	  Support for the Nubia Z30 Pro
+	  which is based on QCOM LAHAINA chipset.
+
 config ARCH_QTI_VM
 	bool "Enable Virtual Machines Support for Qualcomm Technologies, Inc."
 	depends on ARCH_QCOM
