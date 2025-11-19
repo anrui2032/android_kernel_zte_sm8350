@@ -255,6 +255,7 @@ static int alarmtimer_suspend(struct device *dev)
 	struct rtc_device *rtc;
 	unsigned long flags;
 	struct rtc_time tm;
+	struct alarm *min_alarm = NULL;
 
 	spin_lock_irqsave(&freezer_delta_lock, flags);
 	min = freezer_delta;
@@ -284,12 +285,16 @@ static int alarmtimer_suspend(struct device *dev)
 			expires = next->expires;
 			min = delta;
 			type = i;
+			min_alarm = container_of(next, struct alarm, node);
 		}
 	}
 	if (min == 0)
 		return 0;
 
 	if (ktime_to_ns(min) < 2 * NSEC_PER_SEC) {
+		/* Power: show alarm info when alarm suspend failed */
+		pr_info("ZTE_ALARM alarmtimer suspend failed due to min_alarm < 2s, function=%pf\n",
+			min_alarm->function);
 		__pm_wakeup_event(ws, 2 * MSEC_PER_SEC);
 		return -EBUSY;
 	}
@@ -366,8 +371,15 @@ void alarm_start(struct alarm *alarm, ktime_t start)
 {
 	struct alarm_base *base = &alarm_bases[alarm->type];
 	unsigned long flags;
+	ktime_t relative_expiry_time;
 
 	spin_lock_irqsave(&base->lock, flags);
+
+	/***  Power: show alarm info when set  ***/
+	relative_expiry_time = ktime_sub(start, base->gettime());
+	pr_info("ZTE_ALARM set alarm %lld s later at %lld s in alarm_start...function=%pf\n",
+		(ktime_to_ms(relative_expiry_time)/1000), (ktime_to_ms(base->gettime())/1000), alarm->function);
+
 	alarm->node.expires = start;
 	alarmtimer_enqueue(base, alarm);
 	hrtimer_start(&alarm->timer, alarm->node.expires, HRTIMER_MODE_ABS);

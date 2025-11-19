@@ -512,6 +512,9 @@ struct ring_buffer {
 	struct rb_irq_work		irq_work;
 	bool				time_stamp_abs;
 };
+/* ZTE add for distinguishing multi definitions of the ring buffer struct */
+typedef struct ring_buffer zte_trace_ring_buffer_t;
+zte_trace_ring_buffer_t *zte_trace_ring_buffer_type_stub = NULL;
 
 struct ring_buffer_iter {
 	struct ring_buffer_per_cpu	*cpu_buffer;

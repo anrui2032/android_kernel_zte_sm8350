@@ -174,3 +174,15 @@ bool set_freezable(void)
 	return try_to_freeze();
 }
 EXPORT_SYMBOL(set_freezable);
+
+/**** ZSW_ADD FOR CPUFREEZER begin ****/
+void acquire_freezer_lock(void)
+{
+	spin_lock_irq(&freezer_lock);
+}
+
+void release_freezer_lock(void)
+{
+	spin_unlock_irq(&freezer_lock);
+}
+/**** ZSW_ADD FOR CPUFREEZER end ****/

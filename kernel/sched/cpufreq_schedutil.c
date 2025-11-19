@@ -15,6 +15,12 @@
 #include <linux/sched/sysctl.h>
 #include <trace/hooks/sched.h>
 
+/* PM: added for cpufreq scheutil change */
+unsigned int cpufreq_ctrl_mode = 0;
+unsigned int cpufreq_ctrl_level1 = 2000000;
+unsigned int cpufreq_ctrl_level2 = 2323200;
+unsigned int cpufreq_ctrl_level2_target = 2419200;
+/* added end */
 #define IOWAIT_BOOST_MIN	(SCHED_CAPACITY_SCALE / 8)
 
 struct sugov_tunables {
@@ -298,6 +304,25 @@ static unsigned int get_next_freq(struct sugov_policy *sg_policy,
 				policy->cpuinfo.max_freq : policy->cur;
 	unsigned long next_freq = 0;
 
+	freq = map_util_freq(util, freq, max);
+
+	/* PM: added for cpufreq scheutil change */
+	switch (cpufreq_ctrl_mode) {
+	case 1:
+		if (freq > cpufreq_ctrl_level1) {
+			freq = (freq * 100 * util)/(98 * max);
+		}
+		break;
+	case 2:
+		if (freq > cpufreq_ctrl_level2) {
+			freq = cpufreq_ctrl_level2_target;
+		}
+		break;
+	default:
+		break;
+	}
+	/* add end */
+	trace_sugov_next_freq(policy->cpu, util, max, freq);
 	trace_android_vh_map_util_freq(util, freq, max, &next_freq);
 	if (next_freq)
 		freq = next_freq;
@@ -1021,12 +1046,45 @@ static ssize_t pl_store(struct gov_attr_set *attr_set, const char *buf,
 	return count;
 }
 
+/* PM: added for cpufreq scheutil change */
+static ssize_t cpufreq_ctrl_show(struct gov_attr_set *attr_set, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d\n", cpufreq_ctrl_mode);
+}
+
+static ssize_t cpufreq_ctrl_store(struct gov_attr_set *attr_set, const char *buf,
+				   size_t count)
+{
+	if (sscanf(buf, "%d", &cpufreq_ctrl_mode) != 1)
+		pr_err("failed to cpufreq ctrl mode: %d\n", cpufreq_ctrl_mode);
+	return count;
+}
+
+static ssize_t cpufreq_conf_show(struct gov_attr_set *attr_set, char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%d:%d:%d\n", cpufreq_ctrl_level1,
+					 cpufreq_ctrl_level2, cpufreq_ctrl_level2_target);
+}
+
+static ssize_t cpufreq_conf_store(struct gov_attr_set *attr_set, const char *buf,
+				   size_t count)
+{
+	if (sscanf(buf, "%d:%d:%d", &cpufreq_ctrl_level1, &cpufreq_ctrl_level2,
+			   &cpufreq_ctrl_level2_target) != 3)
+		pr_err("failed to cpufreq ctrl setting!!!\n");
+	return count;
+}
+/* added end */
 static struct governor_attr up_rate_limit_us = __ATTR_RW(up_rate_limit_us);
 static struct governor_attr down_rate_limit_us = __ATTR_RW(down_rate_limit_us);
 static struct governor_attr hispeed_load = __ATTR_RW(hispeed_load);
 static struct governor_attr hispeed_freq = __ATTR_RW(hispeed_freq);
 static struct governor_attr rtg_boost_freq = __ATTR_RW(rtg_boost_freq);
 static struct governor_attr pl = __ATTR_RW(pl);
+/* PM: added for cpufreq scheutil change */
+static struct governor_attr cpufreq_ctrl = __ATTR_RW(cpufreq_ctrl);
+static struct governor_attr cpufreq_conf = __ATTR_RW(cpufreq_conf);
+/* added end */
 
 static struct attribute *sugov_attrs[] = {
 	&up_rate_limit_us.attr,
@@ -1035,6 +1093,10 @@ static struct attribute *sugov_attrs[] = {
 	&hispeed_freq.attr,
 	&rtg_boost_freq.attr,
 	&pl.attr,
+	/* PM: added for cpufreq scheutil change */
+	&cpufreq_ctrl.attr,
+	&cpufreq_conf.attr,
+	/* added end */
 	NULL
 };
 ATTRIBUTE_GROUPS(sugov);

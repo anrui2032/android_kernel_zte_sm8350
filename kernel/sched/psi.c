@@ -145,6 +145,11 @@
 #define CREATE_TRACE_POINTS
 #include <trace/events/psi.h>
 
+#ifdef CONFIG_PSI_ZTE_PATCH
+#include <linux/mm.h>
+#include <linux/percpu_counter.h>
+#endif
+
 static int psi_bug __read_mostly;
 
 DEFINE_STATIC_KEY_FALSE(psi_disabled);
@@ -175,6 +180,21 @@ __setup("psi=", setup_psi);
 /* Sampling frequency in nanoseconds */
 static u64 psi_period __read_mostly;
 
+/* support null = to param for possible psi leave unset by zte 20201202 */
+#ifdef CONFIG_PSI_ZTE_PATCH
+int zte_psi_task_retag_debug_cnt = 0; /* task already set flag, inaccurate */
+long zte_psi_task_retag_last_pid = -1; /* invalid value */
+struct percpu_counter zte_psi_task_enter_percpu_cnt ____cacheline_aligned_in_smp;
+struct percpu_counter zte_psi_task_exit_percpu_cnt ____cacheline_aligned_in_smp;
+struct percpu_counter zte_psi_task_set_percpu_cnt ____cacheline_aligned_in_smp;
+struct percpu_counter zte_psi_task_clear_percpu_cnt ____cacheline_aligned_in_smp;
+#ifdef CONFIG_SMP
+s32 psi_cnt_committed_as_batch = 16; /* just man-made experience value */
+#else
+#define psi_cnt_committed_as_batch 0
+#endif /* end of smp */
+#endif /* end of psi zte patch */
+
 /* System-level pressure and stall tracking */
 static DEFINE_PER_CPU(struct psi_group_cpu, system_group_pcpu);
 struct psi_group psi_system = {
@@ -182,6 +202,25 @@ struct psi_group psi_system = {
 };
 
 static void psi_avgs_work(struct work_struct *work);
+
+#ifdef CONFIG_PSI_ZTE_PATCH
+static inline void psi_cnt_enter_memstall(void)
+{
+	percpu_counter_add_batch(&zte_psi_task_enter_percpu_cnt, 1, psi_cnt_committed_as_batch);
+}
+static inline void psi_cnt_exit_memstall(void)
+{
+	percpu_counter_add_batch(&zte_psi_task_exit_percpu_cnt, 1, psi_cnt_committed_as_batch);
+}
+static inline void psi_cnt_set_memstall(void)
+{
+	percpu_counter_add_batch(&zte_psi_task_set_percpu_cnt, 1, psi_cnt_committed_as_batch);
+}
+static inline void psi_cnt_clear_memstall(void)
+{
+	percpu_counter_add_batch(&zte_psi_task_clear_percpu_cnt, 1, psi_cnt_committed_as_batch);
+}
+#endif
 
 static void group_init(struct psi_group *group)
 {
@@ -208,6 +247,19 @@ static void group_init(struct psi_group *group)
 
 void __init psi_init(void)
 {
+#ifdef CONFIG_PSI_ZTE_PATCH
+	int ret;
+
+	ret = percpu_counter_init(&zte_psi_task_enter_percpu_cnt, 0, GFP_KERNEL);
+	VM_BUG_ON(ret);
+	ret = percpu_counter_init(&zte_psi_task_exit_percpu_cnt, 0, GFP_KERNEL);
+	VM_BUG_ON(ret);
+	ret = percpu_counter_init(&zte_psi_task_set_percpu_cnt, 0, GFP_KERNEL);
+	VM_BUG_ON(ret);
+	ret = percpu_counter_init(&zte_psi_task_clear_percpu_cnt, 0, GFP_KERNEL);
+	VM_BUG_ON(ret);
+#endif
+
 	if (!psi_enable) {
 		static_branch_enable(&psi_disabled);
 		return;
@@ -808,6 +860,15 @@ void psi_task_change(struct task_struct *task, int clear, int set)
 		psi_bug = 1;
 	}
 
+#ifdef CONFIG_PSI_ZTE_PATCH /* trace task psi flag */
+	if (set & TSK_MEMSTALL) {
+		psi_cnt_set_memstall();
+	}
+	if (clear & TSK_MEMSTALL) {
+		psi_cnt_clear_memstall();
+	}
+#endif
+
 	task->psi_flags &= ~clear;
 	task->psi_flags |= set;
 
@@ -864,8 +925,19 @@ void psi_memstall_enter(unsigned long *flags)
 		return;
 
 	*flags = current->flags & PF_MEMSTALL;
+#ifdef CONFIG_PSI_ZTE_PATCH
+	if (*flags) { /* already set, so warning cnt */
+		zte_psi_task_retag_debug_cnt++; /* not sync but > 0 has signalled */
+		zte_psi_task_retag_last_pid = current->pid;
+		printk_deferred(KERN_ERR "psi: retag_debug task=%d:%s %x %d\n",
+			current->pid, current->comm, current->psi_flags,
+			zte_psi_task_retag_debug_cnt);
+		return;
+	}
+#else
 	if (*flags)
 		return;
+#endif
 	/*
 	 * PF_MEMSTALL setting & accounting needs to be atomic wrt
 	 * changes to the task's scheduling state, otherwise we can
@@ -877,6 +949,9 @@ void psi_memstall_enter(unsigned long *flags)
 	psi_task_change(current, 0, TSK_MEMSTALL);
 
 	rq_unlock_irq(rq, &rf);
+#ifdef CONFIG_PSI_ZTE_PATCH
+	psi_cnt_enter_memstall();
+#endif
 }
 
 /**
@@ -906,6 +981,10 @@ void psi_memstall_leave(unsigned long *flags)
 	psi_task_change(current, TSK_MEMSTALL, 0);
 
 	rq_unlock_irq(rq, &rf);
+
+#ifdef CONFIG_PSI_ZTE_PATCH
+	psi_cnt_exit_memstall();
+#endif
 }
 
 #ifdef CONFIG_CGROUPS

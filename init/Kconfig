@@ -582,6 +582,16 @@ config PSI_FTRACE
 	  If set, PSI ftrace events may be
 	  enabled.
 
+config PSI_ZTE_PATCH
+	bool "make psi stable for some PSI issues"
+	default n
+	depends on PSI
+	help
+	  If not set, PSI may bahave malfunction and
+	  will trigger many warning events.
+	  If set, PSI events may be
+	  reduced.
+
 endmenu # "CPU/Task time and stats accounting"
 
 config CPU_ISOLATION

@@ -1669,6 +1669,17 @@ static struct ctl_table vm_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &two,
 	},
+#ifdef CONFIG_UID_PAGELIST
+	{
+		.procname	= "uid_pagelist_switch",
+		.data		= &sysctl_uid_pagelist_switch,
+		.maxlen		= sizeof(sysctl_uid_pagelist_switch),
+		.mode		= 0666,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= &two,
+	},
+#endif
 	{
 		.procname	= "oom_kill_allocating_task",
 		.data		= &sysctl_oom_kill_allocating_task,
