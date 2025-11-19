@@ -24,6 +24,7 @@
 #define REG_VALID 0x0
 #define REG_DATA_LO 0x4
 #define REG_DATA_HI 0x8
+#define ZTE_RPMH_BUG_LEN  2048
 
 #define GET_ADDR(REG, UNIT_NO) (REG + (UNIT_DIST * UNIT_NO))
 
@@ -116,6 +117,68 @@ static ssize_t msm_rpmh_master_stats_print_data(char *prvbuf, ssize_t length,
 			record->last_entered, record->last_exited,
 			accumulated_duration);
 }
+/* zte_pm show rpmh_master_stats - begin */
+static ssize_t msm_rpmh_master_stats_print_data_zte(char *prvbuf, ssize_t length,
+				struct msm_rpmh_master_stats *record,
+				const char *name)
+{
+	uint64_t accumulated_duration = record->accumulated_duration;
+	/*
+	 * If a master is in sleep when reading the sleep stats from SMEM
+	 * adjust the accumulated sleep duration to show actual sleep time.
+	 * This ensures that the displayed stats are real when used for
+	 * the purpose of computing battery utilization.
+	 */
+	if (record->last_entered > record->last_exited)
+		accumulated_duration +=
+				(__arch_counter_get_cntvct()
+				- record->last_entered);
+
+	return scnprintf(prvbuf, length, "%s Version:0x%x "
+			"Sleep Count:0x%x "
+			"Sleep Last Entered At:0x%llx "
+			"Sleep Last Exited At:0x%llx "
+			"Sleep Accumulated Duration:0x%llx\n\n",
+			name, record->version_id, record->counts,
+			record->last_entered, record->last_exited,
+			accumulated_duration);
+}
+
+void pm_show_rpmh_master_stats(void)
+{
+	ssize_t length;
+	ssize_t one_rec_length;
+	int i = 0;
+	size_t size = 0;
+	struct msm_rpmh_master_stats *record = NULL;
+	static char buf[ZTE_RPMH_BUG_LEN] = {0};
+
+	mutex_lock(&rpmh_stats_mutex);
+	/* First Read APSS master stats */
+	length = msm_rpmh_master_stats_print_data_zte(buf, PAGE_SIZE, &apss_master_stats, "APSS");
+	one_rec_length = length;
+	/* Read SMEM data written by other masters */
+	for (i = 0; i < ARRAY_SIZE(rpmh_masters); i++) {
+		record = (struct msm_rpmh_master_stats *) qcom_smem_get(
+					rpmh_masters[i].pid,
+					rpmh_masters[i].smem_id, &size);
+
+		if (!IS_ERR_OR_NULL(record) && (PAGE_SIZE - length > 0)
+			&& (ZTE_RPMH_BUG_LEN - length - one_rec_length > 0))
+			length += msm_rpmh_master_stats_print_data_zte(
+					buf + length, PAGE_SIZE - length,
+					record,
+					rpmh_masters[i].master_name);
+	}
+	if (length > ZTE_RPMH_BUG_LEN) {
+		pr_err("%s: ERROR zte_pm rmph_master_stats buffer len=%d\n", __func__, length);
+	} else {
+		pr_info("zte_pm rmph_master_stats=%s\n ", buf);
+	}
+
+	mutex_unlock(&rpmh_stats_mutex);
+}
+/* zte_pm show rpmh_master_stats - end */
 
 static ssize_t msm_rpmh_master_stats_show(struct kobject *kobj,
 				struct kobj_attribute *attr, char *buf)
