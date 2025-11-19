@@ -62,6 +62,11 @@
 
 #include "audit.h"
 
+#ifdef CONFIG_ZTE_BOOT_MODE
+#include <linux/ratelimit.h>
+#include <linux/module.h>
+#endif
+
 /* No auditing will take place until audit_initialized == AUDIT_INITIALIZED.
  * (Initialization happens after skb_init is called.) */
 #define AUDIT_DISABLED		-1
@@ -153,6 +158,13 @@ static DECLARE_WAIT_QUEUE_HEAD(kauditd_wait);
 
 /* waitqueue for callers who are blocked on the audit backlog */
 static DECLARE_WAIT_QUEUE_HEAD(audit_backlog_wait);
+
+#ifdef CONFIG_ZTE_BOOT_MODE
+static int audit_printk_no_ratelimit;
+module_param(audit_printk_no_ratelimit, int, 0644);
+MODULE_PARM_DESC(audit_printk_no_ratelimit,
+	"set to 1 to disable the printk reatelimit of audit (default 0)");
+#endif
 
 static struct audit_features af = {.vers = AUDIT_FEATURE_VERSION,
 				   .mask = -1,
@@ -539,8 +551,16 @@ static void kauditd_printk_skb(struct sk_buff *skb)
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
 	char *data = nlmsg_data(nlh);
 
+#ifdef CONFIG_ZTE_BOOT_MODE
+	DEFINE_RATELIMIT_STATE(printk_ratelimit_audit, 5 * HZ, 1000);
+
+	if (nlh->nlmsg_type != AUDIT_EOE
+		&& (__ratelimit(&printk_ratelimit_audit) || audit_printk_no_ratelimit))
+		pr_notice("type=%d %s\n", nlh->nlmsg_type, data);
+#else
 	if (nlh->nlmsg_type != AUDIT_EOE && printk_ratelimit())
 		pr_notice("type=%d %s\n", nlh->nlmsg_type, data);
+#endif
 }
 
 /**

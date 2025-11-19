@@ -247,9 +247,19 @@ extern int pm_test_level;
 #endif
 
 #ifdef CONFIG_SUSPEND_FREEZER
+
+/* zte_pm add for sync */
+extern void suspend_sys_sync_queue(void);
+extern int suspend_sys_sync_wait(void);
+
 static inline int suspend_freeze_processes(void)
 {
 	int error;
+	/* zte_pm add for sync */
+	error = suspend_sys_sync_wait();
+	if (error)
+		return error;
+	/* zte_pm add for sync */
 
 	error = freeze_processes();
 	/*
