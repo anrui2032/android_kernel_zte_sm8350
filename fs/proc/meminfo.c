@@ -25,6 +25,13 @@
 #include <linux/seq_buf.h>
 #endif
 
+#ifdef CONFIG_PSI
+#ifdef CONFIG_PSI_ZTE_PATCH
+#include <linux/psi.h>
+#include <vendor/soc/qcom/debug_policy.h>
+#endif
+#endif
+
 void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 {
 }
@@ -64,6 +71,23 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	unsigned long pages[NR_LRU_LISTS];
 	unsigned long sreclaimable, sunreclaim;
 	int lru;
+#ifdef CONFIG_UID_PAGELIST
+	int iter;
+#endif
+#ifdef CONFIG_PSI
+#ifdef CONFIG_PSI_ZTE_PATCH
+	unsigned long enter_memstall_cnt;
+	unsigned long exit_memstall_cnt;
+	unsigned long set_memstall_cnt;
+	unsigned long clear_memstall_cnt;
+
+	/* both s64 to u64 */
+	enter_memstall_cnt = percpu_counter_sum(&zte_psi_task_enter_percpu_cnt);
+	exit_memstall_cnt = percpu_counter_sum(&zte_psi_task_exit_percpu_cnt);
+	set_memstall_cnt = percpu_counter_sum(&zte_psi_task_set_percpu_cnt);
+	clear_memstall_cnt = percpu_counter_sum(&zte_psi_task_clear_percpu_cnt);
+#endif
+#endif
 
 	si_meminfo(&i);
 	si_swapinfo(&i);
@@ -177,11 +201,38 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 	show_val_kb(m, "CmaFree:        ",
 		    global_zone_page_state(NR_FREE_CMA_PAGES));
 #endif
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	show_val_kb(m, "DefragPoolFree: ",
+		    global_zone_page_state(NR_FREE_UNMOV_SEC_POOL));
+	show_val_kb(m, "RealMemFree:    ", i.freeram -
+		    global_zone_page_state(NR_FREE_UNMOV_SEC_POOL));
+#endif
+
+#ifdef CONFIG_UID_PAGELIST
+	show_val_kb(m, "a_shrink_num:   ", active_nr);
+	show_val_kb(m, "ina_shrink_num: ", inactive_nr);
+	for (iter = 0; iter < 3; iter++)
+		show_val_kb(m, "priority:       ", priority_nr[iter]);
+#endif
 
 	if (m) {
 		hugetlb_report_meminfo(m);
 		arch_report_meminfo(m);
 	}
+#ifdef CONFIG_PSI
+#ifdef CONFIG_PSI_ZTE_PATCH
+	if (m && is_kernel_log_driver_enabled()) { /* always exist for zte build */
+		seq_put_decimal_ull(m, "memstl_cnt:", enter_memstall_cnt);
+		seq_put_decimal_ull(m, ", ", exit_memstall_cnt);
+		seq_put_decimal_ull(m, ", ", set_memstall_cnt);
+		seq_put_decimal_ull(m, ", ", clear_memstall_cnt);
+		/* both int to u64 */
+		seq_put_decimal_ull(m, ", ", zte_psi_task_retag_debug_cnt);
+		seq_put_decimal_ull(m, ", ", zte_psi_task_retag_last_pid);
+		seq_putc(m, '\n');
+	}
+#endif
+#endif
 
 	return 0;
 }
