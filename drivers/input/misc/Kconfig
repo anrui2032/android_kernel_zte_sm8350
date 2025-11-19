@@ -884,6 +884,14 @@ config INPUT_HISI_POWERKEY
 	  To compile this driver as a module, choose M here: the
 	  module will be called hisi_powerkey.
 
+config SENSORS_HALL_AH1898
+	tristate "HALL sensor for ah1898"
+	default n
+	help
+	  This driver provides support for the AH1898 HALL sensor
+	  The sensor report a gpio interrupt for input system. The sensor is for
+	  /sys/bus/platform/ah1898.
+
 config INPUT_RAVE_SP_PWRBUTTON
 	tristate "RAVE SP Power button Driver"
 	depends on RAVE_SP_CORE
@@ -914,4 +922,14 @@ config INPUT_STPMIC1_ONKEY
 	  To compile this driver as a module, choose M here: the
 	  module will be called stpmic1_onkey.
 
+config STMVL53L1
+	tristate "STM VL53L1 Proximity support"
+	depends on I2C=y
+	default y
+	help
+	  Say Y here if you want to use STMicroelectronics's vl53L1 TOF AF sensor
+	  through I2C interface.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called stmvl53l1.
 endif
