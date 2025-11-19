@@ -1368,6 +1368,57 @@ static void purge_configs_funcs(struct gadget_info *gi)
 	}
 }
 
+/* OEM USB Attrs. */
+struct usb_parameters {
+	char enable_cdrom;
+	char forceSwitch;
+	char noSerialno;
+	char rebootFtm;
+};
+
+struct usb_parameters zte_usb_parameters = {
+	.enable_cdrom = 0,
+	.forceSwitch = 0,
+	.noSerialno = 0,
+	.rebootFtm = 0,
+};
+
+
+/* FTM and usbmanutag. */
+static int got_manufacture_tag = 0;
+
+static int is_usb_factory_mode(void)
+{
+	return !!got_manufacture_tag;
+}
+
+static void ftm_iSerialNumber_filter(struct usb_composite_dev *cdev)
+{
+	if (is_usb_factory_mode()
+		|| (zte_usb_parameters.noSerialno && !zte_usb_parameters.rebootFtm)) {
+		if (cdev)
+			cdev->desc.iSerialNumber = 0;
+	}
+}
+
+static ssize_t manu_tag_show(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buf)
+{
+	return scnprintf(buf, PAGE_SIZE, "%s\n", got_manufacture_tag ? "enable" : "disable");
+}
+
+static ssize_t manu_tag_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t size)
+{
+	if (!strncmp(buf, "enable", strlen("enable"))) {
+		pr_info("usb got_manufacture_tag.\n");
+		got_manufacture_tag = 1;
+	}
+
+	return size;
+}
 static int configfs_composite_bind(struct usb_gadget *gadget,
 		struct usb_gadget_driver *gdriver)
 {
@@ -1379,6 +1430,12 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 	struct usb_string		*s;
 	unsigned			i;
 	int				ret;
+
+	/* For usbmanutag. */
+	if (is_usb_factory_mode() && !zte_usb_parameters.forceSwitch) {
+		pr_info("usb:%s, got_manufacture_tag=%d\n", __func__, got_manufacture_tag);
+		return -EBUSY;
+	}
 
 	/* the gi->lock is hold by the caller */
 	gi->unbind = 0;
@@ -1436,6 +1493,8 @@ static int configfs_composite_bind(struct usb_gadget *gadget,
 		gi->cdev.desc.iProduct = s[USB_GADGET_PRODUCT_IDX].id;
 		gi->cdev.desc.iSerialNumber = s[USB_GADGET_SERIAL_IDX].id;
 	}
+
+	ftm_iSerialNumber_filter(cdev);
 
 	if (gi->use_os_desc) {
 		cdev->use_os_string = true;
@@ -1793,8 +1852,43 @@ out:
 
 static DEVICE_ATTR(state, S_IRUGO, state_show, NULL);
 
+/* USB config attr. */
+#define OEM_USB_CONFIG_ATTR(field, format_string)			\
+static ssize_t								\
+field ## _show(struct device *dev, struct device_attribute *attr,	\
+		char *buf)						\
+{									\
+	return snprintf(buf, PAGE_SIZE,					\
+			format_string, zte_usb_parameters.field);	\
+}									\
+static ssize_t								\
+field ## _store(struct device *dev, struct device_attribute *attr,	\
+		const char *buf, size_t size)				\
+{									\
+	int value;							\
+	if (sscanf(buf, format_string, &value) == 1) {			\
+		zte_usb_parameters.field = value;			\
+		return size;						\
+	}								\
+	return -EPERM;							\
+}									\
+static DEVICE_ATTR(field, S_IRUGO | S_IWUSR, field ## _show, field ## _store);
+
+OEM_USB_CONFIG_ATTR(enable_cdrom, "%d\n")
+OEM_USB_CONFIG_ATTR(forceSwitch, "%d\n")
+OEM_USB_CONFIG_ATTR(noSerialno, "%d\n")
+OEM_USB_CONFIG_ATTR(rebootFtm, "%d\n")
+
+static DEVICE_ATTR(manu_tag, 0664, manu_tag_show, manu_tag_store);
+
 static struct device_attribute *android_usb_attributes[] = {
 	&dev_attr_state,
+	/* USB config attr. */
+	&dev_attr_manu_tag,
+	&dev_attr_enable_cdrom,
+	&dev_attr_forceSwitch,
+	&dev_attr_noSerialno,
+	&dev_attr_rebootFtm,
 	NULL
 };
 
