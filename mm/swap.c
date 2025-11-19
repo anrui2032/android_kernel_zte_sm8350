@@ -68,7 +68,12 @@ static void __page_cache_release(struct page *page)
 		lruvec = mem_cgroup_page_lruvec(page, pgdat);
 		VM_BUG_ON_PAGE(!PageLRU(page), page);
 		__ClearPageLRU(page);
+#ifdef CONFIG_UID_PAGELIST
+		del_page_from_lru_list(page, lruvec, page_off_lru(page),
+						PageUIDLRU(page) ? true:false);
+#else
 		del_page_from_lru_list(page, lruvec, page_off_lru(page));
+#endif
 		spin_unlock_irqrestore(&pgdat->lru_lock, flags);
 	}
 	__ClearPageWaiters(page);
@@ -222,7 +227,12 @@ static void pagevec_move_tail_fn(struct page *page, struct lruvec *lruvec,
 	int *pgmoved = arg;
 
 	if (PageLRU(page) && !PageUnevictable(page)) {
+#ifdef CONFIG_UID_PAGELIST
+		del_page_from_lru_list(page, lruvec, page_lru(page),
+						PageUIDLRU(page) ? true:false);
+#else
 		del_page_from_lru_list(page, lruvec, page_lru(page));
+#endif
 		ClearPageActive(page);
 		add_page_to_lru_list_tail(page, lruvec, page_lru(page));
 		(*pgmoved)++;
@@ -279,7 +289,12 @@ static void __activate_page(struct page *page, struct lruvec *lruvec,
 		int file = page_is_file_cache(page);
 		int lru = page_lru_base_type(page);
 
+#ifdef CONFIG_UID_PAGELIST
+		del_page_from_lru_list(page, lruvec, lru,
+						PageUIDLRU(page) ? true:false);
+#else
 		del_page_from_lru_list(page, lruvec, lru);
+#endif
 		SetPageActive(page);
 		lru += LRU_ACTIVE;
 		add_page_to_lru_list(page, lruvec, lru);
@@ -513,7 +528,12 @@ static void lru_deactivate_file_fn(struct page *page, struct lruvec *lruvec,
 	file = page_is_file_cache(page);
 	lru = page_lru_base_type(page);
 
+#ifdef CONFIG_UID_PAGELIST
+	del_page_from_lru_list(page, lruvec, lru + active,
+					PageUIDLRU(page) ? true:false);
+#else
 	del_page_from_lru_list(page, lruvec, lru + active);
+#endif
 	ClearPageActive(page);
 	ClearPageReferenced(page);
 
@@ -546,7 +566,12 @@ static void lru_deactivate_fn(struct page *page, struct lruvec *lruvec,
 		int file = page_is_file_cache(page);
 		int lru = page_lru_base_type(page);
 
+#ifdef CONFIG_UID_PAGELIST
+		del_page_from_lru_list(page, lruvec, lru + LRU_ACTIVE,
+					PageUIDLRU(page) ? true:false);
+#else
 		del_page_from_lru_list(page, lruvec, lru + LRU_ACTIVE);
+#endif
 		ClearPageActive(page);
 		ClearPageReferenced(page);
 		add_page_to_lru_list(page, lruvec, lru);
@@ -563,8 +588,13 @@ static void lru_lazyfree_fn(struct page *page, struct lruvec *lruvec,
 	    !PageSwapCache(page) && !PageUnevictable(page)) {
 		bool active = PageActive(page);
 
+#ifdef CONFIG_UID_PAGELIST
+		del_page_from_lru_list(page, lruvec, LRU_INACTIVE_ANON + active,
+					PageUIDLRU(page) ? true:false);
+#else
 		del_page_from_lru_list(page, lruvec,
 				       LRU_INACTIVE_ANON + active);
+#endif
 		ClearPageActive(page);
 		ClearPageReferenced(page);
 		/*
@@ -826,7 +856,12 @@ void release_pages(struct page **pages, int nr)
 			lruvec = mem_cgroup_page_lruvec(page, locked_pgdat);
 			VM_BUG_ON_PAGE(!PageLRU(page), page);
 			__ClearPageLRU(page);
+#ifdef CONFIG_UID_PAGELIST
+			del_page_from_lru_list(page, lruvec, page_off_lru(page),
+						PageUIDLRU(page) ? true:false);
+#else
 			del_page_from_lru_list(page, lruvec, page_off_lru(page));
+#endif
 		}
 
 		/* Clear Active bit in case of parallel mark_page_accessed */
@@ -901,6 +936,37 @@ void lru_add_page_tail(struct page *page, struct page *page_tail,
 		update_page_reclaim_stat(lruvec, file, PageActive(page_tail));
 }
 #endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+#ifdef CONFIG_UID_PAGELIST
+void uid_cache_add(struct page *page)
+{
+	struct uid_node *uid_nd;
+	unsigned long flag;
+	struct lruvec *lruvec;
+	struct pglist_data *pgdat = page_pgdat(page);
+	uid_t uid = __task_cred(current)->user->uid.val;
+
+	VM_BUG_ON_PAGE(PageActive(page) && PageUnevictable(page), page);
+	VM_BUG_ON_PAGE(PageLRU(page), page);
+	VM_BUG_ON_PAGE(PageUIDLRU(page), page);
+
+	lruvec = mem_cgroup_page_lruvec(page, pgdat);
+	get_page(page);
+	spin_lock_irqsave(&pgdat->lru_lock, flag);
+	SetPageLRU(page);
+	SetPageUIDLRU(page);
+	uid_nd = find_uid_node(uid, lruvec);
+	if (uid_nd == NULL) {
+		if (lruvec->uid_hash == NULL)
+			lruvec->uid_hash = alloc_uid_hash_table();
+		uid_nd = insert_uid_node(lruvec->uid_hash, uid);
+	}
+	list_add(&page->lru, &uid_nd->page_cache_list);
+	mod_zone_page_state(page_zone(page), NR_ZONE_UID_PAGES,
+					hpage_nr_pages(page));
+	spin_unlock_irqrestore(&pgdat->lru_lock, flag);
+	put_page(page);
+}
+#endif
 
 static void __pagevec_lru_add_fn(struct page *page, struct lruvec *lruvec,
 				 void *arg)

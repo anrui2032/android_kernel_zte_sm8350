@@ -967,6 +967,9 @@ int add_to_page_cache_locked(struct page *page, struct address_space *mapping,
 }
 EXPORT_SYMBOL(add_to_page_cache_locked);
 
+#ifdef CONFIG_UID_PAGELIST
+extern unsigned long get_max_minfree(void);
+#endif
 int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
 				pgoff_t offset, gfp_t gfp_mask)
 {
@@ -990,7 +993,16 @@ int add_to_page_cache_lru(struct page *page, struct address_space *mapping,
 		WARN_ON_ONCE(PageActive(page));
 		if (!(gfp_mask & __GFP_WRITE) && shadow)
 			workingset_refault(page, shadow);
+#ifdef CONFIG_UID_PAGELIST
+		if (sysctl_uid_pagelist_switch &&
+			current->group_leader->hotness > 0 &&
+			(global_node_page_state(NR_FILE_PAGES) - total_swapcache_pages()) > get_max_minfree())
+			uid_cache_add(page);
+		else
+			lru_cache_add(page);
+#else
 		lru_cache_add(page);
+#endif
 	}
 	return ret;
 }

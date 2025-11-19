@@ -2741,7 +2741,12 @@ static void lock_page_lru(struct page *page, int *isolated)
 
 		lruvec = mem_cgroup_page_lruvec(page, pgdat);
 		ClearPageLRU(page);
+#ifdef CONFIG_UID_PAGELIST
+		del_page_from_lru_list(page, lruvec, page_lru(page),
+					PageUIDLRU(page) ? true:false);
+#else
 		del_page_from_lru_list(page, lruvec, page_lru(page));
+#endif
 		*isolated = 1;
 	} else
 		*isolated = 0;
