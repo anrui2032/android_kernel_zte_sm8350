@@ -1512,6 +1512,13 @@ config SCSI_VIRTIO
           This is the virtual HBA driver for virtio.  If the kernel will
           be used in a virtual machine, say Y or M.
 
+# zte function macro control
+config ZTE_UFS_INFORMATION_FUNCTION
+	bool "Enable zte function to get ufs information"
+	default n
+	help
+	  Choose this option if want to get zte ufs information.
+
 source "drivers/scsi/csiostor/Kconfig"
 
 source "drivers/scsi/pcmcia/Kconfig"

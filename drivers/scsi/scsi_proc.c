@@ -37,6 +37,8 @@
 #include "scsi_priv.h"
 #include "scsi_logging.h"
 
+/* Vendor add, for display the emmc id string in desired format, 1/2 */
+#include <linux/string_helpers.h>
 
 /* 4K page size, but our output routines, use some slack for overruns */
 #define PROC_BLOCK_SIZE (3*1024)
@@ -445,12 +447,124 @@ static const struct file_operations proc_scsi_operations = {
 	.release	= seq_release,
 };
 
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+static int proc_print_emmc_id(struct device *dev, void *data)
+{
+
+	struct scsi_device *sdev;
+	struct seq_file *s = data;
+
+	int logical_block_size = 4096;
+
+	u64 capacity_512 = 0;
+
+	if (!scsi_is_sdev_device(dev))
+		goto out;
+
+	sdev = to_scsi_device(dev);
+
+	if (sdev->host->hostt->device_capacity) {
+	    capacity_512 = sdev->host->hostt->device_capacity(sdev);
+	}
+
+	if (sdev->lun == 0) {
+	    seq_printf(s, "Memory Type: UFS (  %s)\n"
+		     "Logical Block Size (bytes): %d\n"
+		     "Size (kB): %llu\n"
+		     "Manufacture: %.8s\n"
+		     "Product Name: %.15s\n",
+		     scsi_device_type(sdev->type),
+		     logical_block_size,
+		     (u64)(capacity_512 * 512 / 1024),
+		     sdev->vendor,
+		     sdev->model);
+	}
+out:
+	return 0;
+}
+
+/* Vendor add, for display the emmc id string in desired format, 2/2 */
+static int origin_emmc_id = 0;
+module_param(origin_emmc_id, int, 0644);
+MODULE_PARM_DESC(origin_emmc_id, "original emmc id info");
+
+static int vendor_proc_print_emmc_id(struct device *dev, void *data)
+{
+	struct scsi_device *sdev;
+	struct seq_file *s = data;
+	unsigned short year = 0;
+	unsigned char month = 0;
+	char cap_str[10] = {0};
+	u64 capacity_512 = 0;
+
+	if (!scsi_is_sdev_device(dev)) {
+		goto out;
+	}
+
+	sdev = to_scsi_device(dev);
+
+	if (sdev->host->hostt->device_capacity) {
+	    capacity_512 = sdev->host->hostt->device_capacity(sdev);
+	}
+
+	string_get_size(capacity_512, 512, STRING_UNITS_10,
+			cap_str, sizeof(cap_str));
+
+	if (sdev->lun == 0) {
+		seq_printf(s, "%.8s-%.8s-%.4s-%02d/%04d-%s-NA\n",
+				sdev->vendor,
+				sdev->model,
+				sdev->rev,
+				month,
+				year,
+				cap_str);
+	}
+out:
+	return 0;
+}
+
+static int proc_emmc_id_show(struct seq_file *sfile, void *dev)
+{
+	if (origin_emmc_id)
+		return proc_print_emmc_id(dev, sfile);
+	else
+		return vendor_proc_print_emmc_id(dev, sfile);
+}
+
+static const struct seq_operations proc_emmc_id_ops = {
+	.start	= scsi_seq_start,
+	.next	= scsi_seq_next,
+	.stop	= scsi_seq_stop,
+	.show	= proc_emmc_id_show
+};
+
+static int proc_emmc_id_open(struct inode *inode, struct file *file)
+{
+	/*
+	 * We don't really need this for the write case but it doesn't
+	 * harm either.
+	 */
+	return seq_open(file, &proc_emmc_id_ops);
+}
+
+static const struct file_operations proc_emmc_id_operations = {
+	.owner		= THIS_MODULE,
+	.open		= proc_emmc_id_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= seq_release,
+};
+#endif
+
 /**
  * scsi_init_procfs - create scsi and scsi/scsi in procfs
  */
 int __init scsi_init_procfs(void)
 {
 	struct proc_dir_entry *pde;
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+	struct proc_dir_entry *p;
+#endif
 
 	proc_scsi = proc_mkdir("scsi", NULL);
 	if (!proc_scsi)
@@ -459,9 +573,18 @@ int __init scsi_init_procfs(void)
 	pde = proc_create("scsi/scsi", 0, NULL, &proc_scsi_operations);
 	if (!pde)
 		goto err2;
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+	p = proc_create("driver/emmc_id", 0444, NULL, &proc_emmc_id_operations);
+	if (!p)
+		goto err3;
+#endif
 
 	return 0;
 
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+err3:
+	remove_proc_entry("scsi/scsi", NULL);
+#endif
 err2:
 	remove_proc_entry("scsi", NULL);
 err1:
@@ -475,4 +598,7 @@ void scsi_exit_procfs(void)
 {
 	remove_proc_entry("scsi/scsi", NULL);
 	remove_proc_entry("scsi", NULL);
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+	remove_proc_entry("driver/emmc_id", NULL);
+#endif
 }

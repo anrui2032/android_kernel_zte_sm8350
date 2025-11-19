@@ -3444,6 +3444,18 @@ static int ufshcd_read_device_desc(struct ufs_hba *hba, u8 *buf, u32 size)
 	return ufshcd_read_desc(hba, QUERY_DESC_IDN_DEVICE, 0, buf, size);
 }
 
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+static int ufshcd_read_geometry_desc(struct ufs_hba *hba, u8 *buf, u32 size)
+{
+	return ufshcd_read_desc(hba, QUERY_DESC_IDN_GEOMETRY, 0, buf, size);
+}
+
+int ufshcd_read_health_desc(struct ufs_hba *hba, u8 *buf, u32 size)
+{
+	return ufshcd_read_desc(hba, QUERY_DESC_IDN_HEALTH, 0, buf, size);
+}
+#endif
+
 /**
  * struct uc_string_id - unicode string
  *
@@ -7659,6 +7671,40 @@ ufs_get_bref_clk_from_hz(unsigned long freq)
 	return REF_CLK_FREQ_INVAL;
 }
 
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+struct ufs_health ufshcd_get_health_descriptor(struct scsi_device *sdev)
+{
+	struct ufs_hba *hba = shost_priv(sdev->host);
+	static struct ufs_health health = {0};
+	int err = 0;
+	u8 desc_buf[QUERY_DESC_HEALTH_DEF_SIZE];
+	u32 bDeviceLifeTimeEstA = 0, bDeviceLifeTimeEstB = 0;
+
+	if (!hba) {
+		return health;
+	}
+
+	pm_runtime_get_sync(hba->dev);
+	err = ufshcd_read_health_desc(hba, desc_buf,
+					QUERY_DESC_HEALTH_DEF_SIZE);
+	if (err) {
+	    pr_err("%s: ufshcd_get_health_descriptor() failed!err =%d\n", __func__, err);
+	} else {
+	    bDeviceLifeTimeEstA = desc_buf[3];
+	    bDeviceLifeTimeEstB = desc_buf[4];
+	    pr_info("%s::bDeviceLifeTimeEstA=0x%x, bDeviceLifeTimeEstB=0x%x\n",
+		    __func__, bDeviceLifeTimeEstA, bDeviceLifeTimeEstB);
+	}
+
+	health.bDeviceLifeTimeEstA = bDeviceLifeTimeEstA;
+	health.bDeviceLifeTimeEstB = bDeviceLifeTimeEstB;
+
+	pm_runtime_put_sync(hba->dev);
+
+	return health;
+}
+#endif
+
 void ufshcd_parse_dev_ref_clk_freq(struct ufs_hba *hba, struct clk *refclk)
 {
 	unsigned long freq;
@@ -7779,6 +7825,35 @@ static int ufshcd_add_lus(struct ufs_hba *hba)
 out:
 	return ret;
 }
+
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+static u64 ufshcd_get_device_capacity(struct scsi_device *sdev)
+{
+	struct ufs_hba *hba = shost_priv(sdev->host);
+	int err;
+	u8 desc_buf[QUERY_DESC_GEOMETRY_DEF_SIZE];
+	u64 device_capacity_512;
+
+	if (!hba)
+		return 0;
+
+	pm_runtime_get_sync(hba->dev);
+	err = ufshcd_read_geometry_desc(hba, desc_buf,
+					QUERY_DESC_GEOMETRY_DEF_SIZE);
+	if (err) {
+	    dev_err(hba->dev, "%s: ufshcd_read_geometry_desc() failed!err =%d\n", __func__, err);
+	    device_capacity_512 = 0;
+	} else
+	    device_capacity_512 = ((u64)desc_buf[4] << 56 | (u64)desc_buf[5] <<  48 |
+				(u64)desc_buf[6] << 40 | (u64)desc_buf[7] << 32 |
+				(u64)desc_buf[8] << 24 | (u64)desc_buf[9] << 16 |
+				(u64)desc_buf[10] << 8 | (u64)desc_buf[11] << 0);
+
+	pm_runtime_put_sync(hba->dev);
+
+	return device_capacity_512;
+}
+#endif
 
 /**
  * ufshcd_probe_hba - probe hba to detect device and initialize
@@ -8005,6 +8080,10 @@ static struct scsi_host_template ufshcd_driver_template = {
 	.eh_device_reset_handler = ufshcd_eh_device_reset_handler,
 	.eh_host_reset_handler   = ufshcd_eh_host_reset_handler,
 	.eh_timed_out		= ufshcd_eh_timed_out,
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+	.device_capacity	= ufshcd_get_device_capacity,
+	.device_health_descriptor	= ufshcd_get_health_descriptor,
+#endif
 	.this_id		= -1,
 	.sg_tablesize		= SG_ALL,
 	.cmd_per_lun		= UFSHCD_CMD_PER_LUN,
