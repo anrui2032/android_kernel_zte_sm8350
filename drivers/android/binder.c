@@ -75,6 +75,9 @@
 #include "binder_internal.h"
 #include "binder_trace.h"
 #include <trace/hooks/binder.h>
+/**** ZSW_ADD FOR CPUFREEZER begin ****/
+#include <stdbool.h>
+/**** ZSW_ADD FOR CPUFREEZER end ****/
 
 static HLIST_HEAD(binder_deferred_list);
 static DEFINE_MUTEX(binder_deferred_lock);
@@ -100,6 +103,11 @@ DEFINE_SHOW_ATTRIBUTE(proc);
 
 #define FORBIDDEN_MMAP_FLAGS                (VM_WRITE)
 
+/**** ZSW_ADD FOR CPUFREEZER begin ****/
+#ifndef ZTE_FEATURE_CGROUP_FREEZER_V2
+#define ZTE_FEATURE_CGROUP_FREEZER_V2            false
+#endif
+/**** ZSW_ADD FOR CPUFREEZER end ****/
 enum {
 	BINDER_DEBUG_USER_ERROR             = 1U << 0,
 	BINDER_DEBUG_FAILED_TRANSACTION     = 1U << 1,
@@ -2884,6 +2892,15 @@ static int binder_proc_transaction(struct binder_transaction *t,
 	bool oneway = !!(t->flags & TF_ONE_WAY);
 	bool pending_async = false;
 	struct binder_transaction *t_outdated = NULL;
+/* ZSW_ADD FOR CPUFREEZER begin */
+#if true == ZTE_FEATURE_CGROUP_FREEZER_V2
+	bool freeze_state = false;
+	size_t free_async_space = 0;
+
+	if (oneway)
+		free_async_space = binder_alloc_get_free_async_space(&proc->alloc);
+#endif
+/* ZSW_ADD FOR CPUFREEZER end */
 
 	BUG_ON(!node);
 	binder_node_lock(node);
@@ -2916,8 +2933,34 @@ static int binder_proc_transaction(struct binder_transaction *t,
 	if (thread) {
 		binder_transaction_priority(thread, t, node);
 		binder_enqueue_thread_work_ilocked(thread, &t->work);
+/* ZSW_ADD FOR CPUFREEZER begin */
+#if true == ZTE_FEATURE_CGROUP_FREEZER_V2
+		if (!oneway) {
+			acquire_freezer_lock();
+			thread->task->flags |= PF_BINDER_NOFREEZE;
+			thread->task->flags |= PF_NOFREEZE;
+			release_freezer_lock();
+			freeze_state = cgroup_needunfreeze_task(thread->task);
+			if (freeze_state)
+			cgroup_binder_unfreeze(thread->task);
+		}
+#endif
+/* ZSW_ADD FOR CPUFREEZER end */
 	} else if (!pending_async) {
 		binder_enqueue_work_ilocked(&t->work, &proc->todo);
+/* ZSW_ADD FOR CPUFREEZER begin */
+#if true == ZTE_FEATURE_CGROUP_FREEZER_V2
+		if (!oneway) {
+			acquire_freezer_lock();
+			proc->tsk->flags |= PF_BINDER_NOFREEZE;
+			proc->tsk->flags |= PF_NOFREEZE;
+			release_freezer_lock();
+			freeze_state = cgroup_needunfreeze_task(proc->tsk);
+			if (freeze_state)
+			cgroup_binder_unfreeze(proc->tsk);
+		}
+#endif
+/* ZSW_ADD FOR CPUFREEZER end */
 	} else {
 		if ((t->flags & TF_UPDATE_TXN) && proc->is_frozen) {
 			t_outdated = binder_find_outdated_transaction_ilocked(t,
@@ -2931,6 +2974,16 @@ static int binder_proc_transaction(struct binder_transaction *t,
 			}
 		}
 		binder_enqueue_work_ilocked(&t->work, &node->async_todo);
+#if true == ZTE_FEATURE_CGROUP_FREEZER_V2
+		if (free_async_space <= SZ_1K * 10) {
+			freeze_state = cgroup_needunfreeze_task(proc->tsk);
+			if (freeze_state) {
+				pr_info("unfreeze async:free async space %zd\n, target_pid = %d",
+					free_async_space, proc->pid);
+				cgroup_binder_unfreeze(proc->tsk);
+			}
+		}
+#endif
 	}
 
 	if (!pending_async)
@@ -3249,7 +3302,7 @@ static void binder_transaction(struct binder_proc *proc,
 
 	t->debug_id = t_debug_id;
 
-	if (reply)
+	if (reply) {
 		binder_debug(BINDER_DEBUG_TRANSACTION,
 			     "%d:%d BC_REPLY %d -> %d:%d, data %016llx-%016llx size %lld-%lld-%lld\n",
 			     proc->pid, thread->pid, t->debug_id,
@@ -3258,6 +3311,17 @@ static void binder_transaction(struct binder_proc *proc,
 			     (u64)tr->data.ptr.offsets,
 			     (u64)tr->data_size, (u64)tr->offsets_size,
 			     (u64)extra_buffers_size);
+/* ZSW_ADD FOR CPUFREEZER begin */
+#if true == ZTE_FEATURE_CGROUP_FREEZER_V2
+		acquire_freezer_lock();
+		if (thread->task->flags & PF_BINDER_NOFREEZE) {
+			thread->task->flags &= ~PF_NOFREEZE;
+			thread->task->flags &= ~PF_BINDER_NOFREEZE;
+		}
+		release_freezer_lock();
+#endif
+/* ZSW_ADD FOR CPUFREEZER end */
+	}
 	else
 		binder_debug(BINDER_DEBUG_TRANSACTION,
 			     "%d:%d BC_TRANSACTION %d -> %d - node %d, data %016llx-%016llx size %lld-%lld-%lld\n",
