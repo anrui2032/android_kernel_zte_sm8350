@@ -38,6 +38,7 @@
 #define pr_fmt(fmt) "TCP: " fmt
 
 #include <net/tcp.h>
+#include <net/net_log.h> /* ZTE_LC_TCP_DEBUG */
 
 #include <linux/compiler.h>
 #include <linux/gfp.h>
@@ -45,6 +46,15 @@
 #include <linux/static_key.h>
 
 #include <trace/events/tcp.h>
+
+/* ZTE_LC_TCP_DEBUG, 20130116 start */
+#include <linux/debugfs.h>
+#include <linux/inet.h>
+#include <linux/rtc.h>
+#include <linux/fb.h>  /* ZTE_PM to record how long LCD keeps on */
+#include <net/ipv6.h>
+#include <linux/proc_fs.h>
+/* ZTE_LC_TCP_DEBUG, 20130116 end */
 
 /* Refresh clocks of a TCP socket,
  * ensuring monotically increasing values.
@@ -60,6 +70,10 @@ void tcp_mstamp_refresh(struct tcp_sock *tp)
 static bool tcp_write_xmit(struct sock *sk, unsigned int mss_now, int nonagle,
 			   int push_one, gfp_t gfp);
 
+/* ZTE_LC_TCP_DEBUG, 20130116 start */
+int tcp_socket_debugfs = 0; /* 1 IPV4, 2 IPV6 ,3 IPV4V6 */
+int ip_log_pm = 0;    /* ZTE_PM_TCP  lcf@20160523 */
+/* ZTE_LC_TCP_DEBUG, 20130116 end */
 /* Account for new data that has been sent to the network. */
 static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 {
@@ -68,6 +82,29 @@ static void tcp_event_new_data_sent(struct sock *sk, struct sk_buff *skb)
 	unsigned int prior_packets = tp->packets_out;
 
 	WRITE_ONCE(tp->snd_nxt, TCP_SKB_CB(skb)->end_seq);
+	/* ZTE_LC_TCP_DEBUG, 20130116 start */
+	if (tcp_socket_debugfs & TCP_IP_LOG_ENABLE) {
+		struct inet_sock *inet = inet_sk(sk);
+		bool is_ipv6hdr = false;
+#if IS_ENABLED(CONFIG_IPV6)
+		if ((sk->sk_family == AF_INET6) && (ipv6_addr_type(&((struct ipv6_pinfo *)(inet6_sk(sk)))->saddr)
+				== IPV6_ADDR_MAPPED)) {
+			is_ipv6hdr = true;
+		}
+#endif
+		if (is_ipv6hdr || AF_INET == sk->sk_family) {
+			if (inet->inet_saddr != htonl(INADDR_LOOPBACK))
+				pr_log_info("[TCP] Tx D_len=%d, Gpid:%d (%s), (%pI4:%hu -> %pI4:%hu))\n",
+					skb->len, current->group_leader->pid, current->group_leader->comm,
+					&inet->inet_saddr,
+					ntohs(inet->inet_sport),
+					&inet->inet_daddr,
+					ntohs(inet->inet_dport));
+		}
+	}
+	/* ZTE_LC_TCP_DEBUG, 20130116 end */
+
+	tp->snd_nxt = TCP_SKB_CB(skb)->end_seq;
 
 	__skb_unlink(skb, &sk->sk_write_queue);
 	tcp_rbtree_insert(&sk->tcp_rtx_queue, skb);
@@ -324,6 +361,28 @@ static void tcp_ecn_send_syn(struct sock *sk, struct sk_buff *skb)
 	bool bpf_needs_ecn = tcp_bpf_ca_needs_ecn(sk);
 	bool use_ecn = sock_net(sk)->ipv4.sysctl_tcp_ecn == 1 ||
 		tcp_ca_needs_ecn(sk) || bpf_needs_ecn;
+	/* ZTE_LC_TCP_DEBUG, 20130116 start */
+	if (tcp_socket_debugfs & TCP_IP_LOG_ENABLE) {
+		struct inet_sock *inet = inet_sk(sk);
+		bool is_ipv6hdr = false;
+
+#if IS_ENABLED(CONFIG_IPV6)
+		if ((sk->sk_family == AF_INET6) &&
+			(ipv6_addr_type(&((struct ipv6_pinfo *)(inet6_sk(sk)))->saddr) == IPV6_ADDR_MAPPED)) {
+			is_ipv6hdr = true;
+		}
+#endif
+		if (is_ipv6hdr || AF_INET == sk->sk_family) {
+			if (inet->inet_saddr != htonl(INADDR_LOOPBACK))
+				pr_log_info("[TCP]  CONN REQ  Gpid:%d (%s), (%pI4:%hu -> %pI4:%hu)\n",
+					current->group_leader->pid, current->group_leader->comm,
+					&inet->inet_saddr,
+					ntohs(inet->inet_sport),
+					&inet->inet_daddr,
+					ntohs(inet->inet_dport));
+		}
+	}
+	/* ZTE_LC_TCP_DEBUG, 20130116 end */
 
 	if (!use_ecn) {
 		const struct dst_entry *dst = __sk_dst_get(sk);
@@ -3160,6 +3219,26 @@ void tcp_send_fin(struct sock *sk)
 	 * Note: in the latter case, FIN packet will be sent after a timeout,
 	 * as TCP stack thinks it has already been transmitted.
 	 */
+	/* ZTE_LC_TCP_DEBUG, 20130116 start */
+	if (tcp_socket_debugfs & TCP_IP_LOG_ENABLE) {
+		struct inet_sock *inet = inet_sk(sk);
+		bool is_ipv6hdr = false;
+
+#if IS_ENABLED(CONFIG_IPV6)
+		if ((sk->sk_family == AF_INET6) &&
+			(ipv6_addr_type(&((struct ipv6_pinfo *)(inet6_sk(sk)))->saddr) == IPV6_ADDR_MAPPED)) {
+			is_ipv6hdr = true;
+		}
+#endif
+		if (is_ipv6hdr || AF_INET == sk->sk_family) {
+			if (inet->inet_saddr != htonl(INADDR_LOOPBACK))
+				pr_log_info("[TCP]  DISCONN  Gpid:%d (%s), (%pI4:%hu -> %pI4:%hu)\n",
+					current->group_leader->pid, current->group_leader->comm,
+					&inet->inet_saddr, ntohs(inet->inet_sport),
+					&inet->inet_daddr, ntohs(inet->inet_dport));
+		}
+	}
+	/* ZTE_LC_TCP_DEBUG, 20130116 end */
 	if (!tskb && tcp_under_memory_pressure(sk))
 		tskb = skb_rb_last(&sk->tcp_rtx_queue);
 
@@ -3876,4 +3955,80 @@ int tcp_rtx_synack(const struct sock *sk, struct request_sock *req)
 	}
 	return res;
 }
+
+/* ZTE_LC_TCP_DEBUG, 20130116 start */
+static int tcp_debug_get(void *data, u64 *val)
+{
+	unsigned int result = tcp_socket_debugfs;
+
+	if (result != 0)
+		*val = (u64)result;
+	else
+		*val = 0;
+
+	pr_log_info("[TCP]  get enable_debug = %d ",  tcp_socket_debugfs);
+	return 0;
+}
+
+static int tcp_debug_enable_set(void *data, u64 val)
+{
+	pr_log_info("[TCP]  set enable_debug = %d ",  (int)val);
+	tcp_socket_debugfs = (int)val;
+	return 0;
+}
+
+DEFINE_SIMPLE_ATTRIBUTE(tcp_enable_debug_fops, tcp_debug_get, tcp_debug_enable_set, "%llu\n");
+
+static void tcp_output_debugfs_init(void)
+{
+	struct proc_dir_entry *tcp_ctrl_dent;
+	struct proc_dir_entry *tcp_ctrl_dfile;
+
+	tcp_ctrl_dent = proc_mkdir("driver/debug/tcp_output_debug", NULL);
+
+	if (!tcp_ctrl_dent)
+		return;
+
+	tcp_ctrl_dfile = proc_create("enable_debug", 0644, tcp_ctrl_dent, &tcp_enable_debug_fops);
+}
+
+/* ZTE_PM_TCP  begin lcf@20160523 */
+static int lcd_fb_callback(struct notifier_block *nfb, unsigned long event, void *data)
+{
+	struct fb_event *evdata = data;
+	int *blank;
+
+	if (!(tcp_socket_debugfs & TCP_IP_PM_LOG_ENABLE)) {
+		ip_log_pm = 0;
+		return 0;
+	}
+	pr_info("ZTE_PM %s enter , event=%lu\n", __func__, event);
+	if (evdata && evdata->data && event == FB_EVENT_BLANK) {
+		blank = evdata->data;
+		pr_info("ZTE_IP_PM %s enter , blank=%d\n", __func__, *blank);
+		if (*blank == FB_BLANK_UNBLANK)
+			ip_log_pm = 0;
+		else if ((*blank == FB_BLANK_POWERDOWN) || (*blank == FB_BLANK_NORMAL))
+			ip_log_pm = 1;
+	}
+
+	return 0;
+}
+
+static struct notifier_block __refdata lcd_fb_notifier = {
+	.notifier_call = lcd_fb_callback,
+};
+
+/* end ZTE_PM_TCP lcf@20160523 */
+
+static __init int tcp_debugfs_init(void)
+{
+	tcp_output_debugfs_init();
+	fb_register_client(&lcd_fb_notifier); /* ZTE_PM_TCP  lcf@20160523 */
+	return 0;
+}
+
+fs_initcall(tcp_debugfs_init);
+/* ZTE_LC_TCP_DEBUG, 20130116 end */
+
 EXPORT_SYMBOL(tcp_rtx_synack);
