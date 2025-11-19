@@ -311,7 +311,7 @@ static void msm_usb_write_readback(void __iomem *base, u32 offset,
 		pr_err("%s: write: %x to QSCRATCH: %x FAILED\n",
 			__func__, val, offset);
 }
-
+static void param_override_init(struct msm_hsphy *phy);
 static void msm_hsphy_reset(struct msm_hsphy *phy)
 {
 	int ret;
@@ -326,6 +326,8 @@ static void msm_hsphy_reset(struct msm_hsphy *phy)
 	if (ret)
 		dev_err(phy->phy.dev, "%s: phy_reset deassert failed\n",
 							__func__);
+
+	param_override_init(phy);
 }
 
 static void hsusb_phy_write_seq(void __iomem *base, u32 *seq, int cnt,
@@ -341,6 +343,147 @@ static void hsusb_phy_write_seq(void __iomem *base, u32 *seq, int cnt,
 			usleep_range(delay, (delay + 2000));
 	}
 }
+
+/* for usb eye diagram test */
+static struct msm_hsphy *the_msm_phy;
+static int param_override_testing;
+static int param_override[] = {
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1
+};
+
+static void param_override_init(struct msm_hsphy *phy)
+{
+	/* struct msm_otg_platform_data *pdata = motg->pdata; */
+	/* seq = pdata->phy_init_seq_override if need */
+	int *seq = NULL;
+	u32 rcal_code = 0;
+
+	if (param_override_testing) {
+		seq = param_override;
+		/* phy->pdata->phy_init_seq = param_override; */
+	}
+
+	if (!seq) {
+		dev_err(phy->phy.dev, "usb %s param_override_init is null, skip\n", __func__);
+		return;
+	}
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_CFG0,
+				UTMI_PHY_CMN_CTRL_OVERRIDE_EN,
+				UTMI_PHY_CMN_CTRL_OVERRIDE_EN);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_UTMI_CTRL5,
+				POR, POR);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_HS_PHY_CTRL_COMMON0,
+				FSEL_MASK, 0);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_HS_PHY_CTRL_COMMON1,
+				PLLBTUNE, PLLBTUNE);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_REFCLK_CTRL,
+				REFCLK_SEL_MASK, REFCLK_SEL_DEFAULT);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_HS_PHY_CTRL_COMMON1,
+				VBUSVLDEXTSEL0, VBUSVLDEXTSEL0);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_HS_PHY_CTRL1,
+				VBUSVLDEXT0, VBUSVLDEXT0);
+
+	while (seq[0] >= 0) {
+		dev_info(phy->phy.dev, "usb param_override_init: write 0x%02x to 0x%02x\n",
+				seq[0], seq[1]);
+		msm_usb_write_readback(phy->base, seq[0], PARAM_OVRD_MASK, seq[1]);
+		seq += 2;
+	}
+
+	if (phy->phy_rcal_reg) {
+		rcal_code = readl_relaxed(phy->phy_rcal_reg) & phy->rcal_mask;
+
+		dev_dbg(phy->phy.dev, "rcal_mask:%08x reg:%pK code:%08x\n",
+				phy->rcal_mask, phy->phy_rcal_reg, rcal_code);
+	}
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_HS_PHY_CTRL_COMMON2,
+				VREGBYPASS, VREGBYPASS);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_HS_PHY_CTRL2,
+				USB2_SUSPEND_N_SEL | USB2_SUSPEND_N,
+				USB2_SUSPEND_N_SEL | USB2_SUSPEND_N);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_UTMI_CTRL0,
+				SLEEPM, SLEEPM);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_UTMI_CTRL5,
+				POR, 0);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_HS_PHY_CTRL2,
+				USB2_SUSPEND_N_SEL, 0);
+
+	msm_usb_write_readback(phy->base, USB2_PHY_USB_PHY_CFG0,
+				UTMI_PHY_CMN_CTRL_OVERRIDE_EN, 0);
+}
+
+static int diagram_param_write(const char *val, const struct kernel_param *kp)
+{
+	int err, size, i = 0;
+	char buf[256] = {0};
+	char *b;
+	char *value;
+	unsigned long tmp;
+	struct msm_hsphy *phy = the_msm_phy;
+
+	dev_info(phy->phy.dev, "usb diagram_param_write val = %s\n", val);
+
+	size = sizeof(param_override)-1;
+	strlcpy(buf, val, sizeof(buf));
+	b = strim(buf);
+	while (b) {
+		value = strsep(&b, ",");
+		if (value) {
+			err = kstrtoul(value, 16, &tmp);
+			if (err) {
+				dev_err(phy->phy.dev, "%s kstrtoul failed\n", __func__);
+				param_override_testing = 0;
+				goto out;
+			}
+			if (i < size)
+				param_override[i] = (int)tmp;
+			i++;
+			if (!param_override_testing)
+				param_override_testing = 1;
+		}
+	}
+
+	param_override_init(phy);
+
+out:
+	return strlen(val);
+}
+
+static int diagram_param_read(char *buf, const struct kernel_param *kp)
+{
+	int i = 0;
+	u32 reg[4] = {0x6c, 0x70, 0x74, 0x78};
+	char *buff = buf;
+	struct msm_hsphy *phy = the_msm_phy;
+
+	for (i = 0; i < 4; i++) {
+		buff += scnprintf(buff, PAGE_SIZE,
+			"REG[0x%02x]=0x%2x,", phy->base+reg[i], readl_relaxed(phy->base + reg[i]));
+	}
+	if (buff != buf)
+		*(buff-1) = '\n';
+	return buff - buf;
+
+}
+
+module_param_call(diagram_param, diagram_param_write, diagram_param_read,
+		  NULL, 0664);
+MODULE_PARM_DESC(diagram_param, "USB eye diagram_param");
 
 #define EUD_EN2 BIT(0)
 static int msm_hsphy_init(struct usb_phy *uphy)
@@ -902,7 +1045,7 @@ static int msm_hsphy_probe(struct platform_device *pdev)
 	}
 
 	msm_hsphy_create_debugfs(phy);
-
+	the_msm_phy = phy;
 	/*
 	 * EUD may be enable in boot loader and to keep EUD session alive across
 	 * kernel boot till USB phy driver is initialized based on cable status,
