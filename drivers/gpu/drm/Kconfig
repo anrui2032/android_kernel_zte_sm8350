@@ -446,3 +446,50 @@ config DRM_PANEL_ORIENTATION_QUIRKS
 config DRM_LIB_RANDOM
 	bool
 	default n
+
+# zte function macro control
+config ZTE_LCD_COMMON_FUNCTION
+	bool "Enable zte lcd function"
+	default n
+	help
+		Choose this option if use zte lcd function.
+
+config ZTE_LCD_BACKLIGHT_LEVEL_CURVE
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd backlight curve"
+
+config ZTE_LCD_HBM_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd hbm control"
+
+config ZTE_LCD_SEC_PANEL_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE Sec panel control"
+
+config ZTE_LCD_GPIO_CTRL_POWER
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Enable zte lcd voltage by GPIO"
+
+config ZTE_LCD_COLOR_GAMUT_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for color gamut control"
+
+config ZTE_LCD_REPORT_CURRENT_FPS
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support report current fps"
+
+config ZTE_LCD_AOD_BRIGHTNESS_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd aod brightness control"
+
+config ZTE_LCD_ACL_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support ACL for oled panel"
+
+config ZTE_LCD_REG_DEBUG
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd reg read"
+
+config ZTE_LCD_DIMMING_CTRL
+	depends on ZTE_LCD_COMMON_FUNCTION
+	bool "Support for ZTE lcd dimming control"
