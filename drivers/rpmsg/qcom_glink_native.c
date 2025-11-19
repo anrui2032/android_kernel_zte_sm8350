@@ -55,6 +55,21 @@ do {									     \
 #define RPM_GLINK_CID_MIN	1
 #define RPM_GLINK_CID_MAX	65536
 
+/* zte_pm add++ */
+#define DEBUG_RX_DONE           (1 << 0)
+#define DEBUG_RX_DATA           (1 << 1)
+#define DEBUG_RX_DATA_DETAILS   (1 << 2)
+static int debug_mask = DEBUG_RX_DONE | DEBUG_RX_DATA;
+module_param(debug_mask, int, 0644);
+
+extern bool can_glink_output(void);
+#define GLINK_INFO_ZTE(fmt, ...)						  \
+do {									  \
+	if (can_glink_output())				  \
+		pr_info(fmt, ##__VA_ARGS__);  \
+} while (0)
+/* zte_pm add-- */
+
 static int should_wake;
 int glink_resume_pkt;
 EXPORT_SYMBOL(glink_resume_pkt);
