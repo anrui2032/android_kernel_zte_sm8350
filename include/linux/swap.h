@@ -445,6 +445,18 @@ static inline long get_nr_swap_pages(void)
 	return atomic_long_read(&nr_swap_pages);
 }
 
+#ifdef CONFIG_UID_PAGELIST
+extern int sysctl_uid_pagelist_switch;
+extern unsigned long uid_pages_size(void);
+extern void uid_cache_add(struct page *page);
+extern struct uid_node *find_uid_node(uid_t uid, struct lruvec *lruvec);
+extern struct uid_node *insert_uid_node(struct uid_node **hash_table,
+							uid_t uid);
+extern struct uid_node **alloc_uid_hash_table(void);
+extern unsigned long inactive_nr;
+extern unsigned long active_nr;
+extern unsigned long priority_nr[];
+#endif
 extern void si_swapinfo(struct sysinfo *);
 extern swp_entry_t get_swap_page(struct page *page);
 extern void put_swap_page(struct page *page, swp_entry_t entry);

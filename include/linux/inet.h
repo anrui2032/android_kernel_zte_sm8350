@@ -56,5 +56,10 @@ extern int in6_pton(const char *src, int srclen, u8 *dst, int delim, const char 
 extern int inet_pton_with_scope(struct net *net, unsigned short af,
 		const char *src, const char *port, struct sockaddr_storage *addr);
 extern bool inet_addr_is_any(struct sockaddr *addr);
+/* ZTE_LC_TCP_DEBUG, 20170418 improved */
+#define TCP_IP_LOG_ENABLE			0x00000001
+#define TCP_IPV4V6_LOG_ENABLE		0x00000003
+#define TCP_IP_PM_LOG_ENABLE		0x00000004
+/* end ZTE_LC_TCP_DEBUG, 20170418 improved */
 
 #endif	/* _LINUX_INET_H */
