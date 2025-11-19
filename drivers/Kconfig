@@ -230,4 +230,14 @@ source "drivers/interconnect/Kconfig"
 
 source "drivers/counter/Kconfig"
 
+source "drivers/vendor/common/Kconfig"
+
+source "drivers/vendor/soc/qcom/Kconfig"
+
+config ZTE_BOOT_MODE
+	bool "zte boot mode"
+	default n
+	help
+	  control zte boot code
+
 endmenu

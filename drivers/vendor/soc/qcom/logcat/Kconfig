@@ -1,0 +1,55 @@
+#
+# vlog driver
+#
+
+config DUAL_SYSTEM_LOGCAT
+	bool "DUAL SYSTEM LOGCAT"
+	---help---
+	  Note that enabling this will open DUAL SYSTEM KERNEL LOG DRIVER.
+
+config ANDROID_LOGGER
+	tristate "Android log driver"
+	default n
+	---help---
+	  Just Config a feature to adapt P \ Q and other later platform.
+
+config ANDROID_ZLOG
+	tristate "Android log driver"
+	default n
+	---help---
+	  This adds support for system-wide logging using four log buffers.
+
+	  These are:
+
+	      1: main
+	      2: events
+	      3: radio
+	      4: system
+
+	  Log reading and writing is performed via normal Linux reads and
+	  optimized writes. This optimization avoids logging having too
+	  much overhead in the system.
+
+config ANDROID_ZLOG_BUFFER
+	bool "Zte uses the android kernel logger buffer"
+	depends on ANDROID_ZLOG
+	default n
+	---help---
+	  This adds support for unnecessary creating zlog buffers.
+
+	  Logger will check whether android zlog buffer should be created:
+
+	      N: kern_transport param is 0
+	      N: user build version with no kern_transport param
+	      Y: kern_transport param is 1
+	      Y: userdebug or eng with no kern_transport param
+
+config ANDROID_ZLOG_LOW_MEM
+	bool "Zte uses less buffer size when low mem config detected"
+	depends on ANDROID_ZLOG
+	default n
+	---help---
+	  This adds support for low memory configuration for zlog buffers.
+	  Logger will check whether low mem config is used:
+	      Y: totalram_pages <= 512M
+	  If yes, a ratio factor will be used to decrease the buffer size.

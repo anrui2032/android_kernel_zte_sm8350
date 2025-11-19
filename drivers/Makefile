@@ -186,3 +186,6 @@ obj-$(CONFIG_SIOX)		+= siox/
 obj-$(CONFIG_GNSS)		+= gnss/
 obj-$(CONFIG_INTERCONNECT)	+= interconnect/
 obj-$(CONFIG_COUNTER)		+= counter/
+
+obj-$(CONFIG_VENDOR_COMMON_COMPILE)	+= vendor/common/
+obj-$(CONFIG_VENDOR_SOC_QCOM_SRC)	+= vendor/soc/qcom/

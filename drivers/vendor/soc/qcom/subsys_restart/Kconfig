@@ -1,0 +1,6 @@
+
+config VENDOR_SUBSYS_RESTART
+	bool "VENDOR_SUBSYS_RESTART"
+	default n
+	help
+	  Say 'y' here to include support for vendor subsystem restart.

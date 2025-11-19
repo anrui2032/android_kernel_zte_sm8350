@@ -1,0 +1,5 @@
+config VENDOR_DEBUG_POLICY
+  bool "DEBUG POLICY Driver"
+  default n
+  help
+    This program is used for enable debug policy driver

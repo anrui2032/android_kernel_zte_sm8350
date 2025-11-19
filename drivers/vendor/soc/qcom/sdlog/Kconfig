@@ -1,0 +1,9 @@
+#
+# Sdlog Driver
+#
+
+config VENDOR_SDLOG
+	bool "Sdlog Driver"
+	default n
+	help
+	  This program is used for capture the modem log.

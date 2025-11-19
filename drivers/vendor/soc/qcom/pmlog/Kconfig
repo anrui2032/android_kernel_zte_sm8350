@@ -1,0 +1,8 @@
+#
+# pmlog driver
+#
+config VENDOR_PMLOG
+  bool "PMLOG Driver"
+  default n
+  help
+    This program is used for recode the ap and modem's sleep and wake time
