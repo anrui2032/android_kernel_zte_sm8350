@@ -37,6 +37,40 @@ int arch_show_interrupts(struct seq_file *p, int prec)
 	return 0;
 }
 
+/* zte_pm - begin */
+void print_irq_info(int i)
+{
+	struct irqaction *action;
+	struct irq_desc *zte_irq_desc;
+	unsigned long flags;
+	int wake_prop = 0;
+
+	zte_irq_desc = irq_to_desc(i);
+	if (zte_irq_desc) {
+		raw_spin_lock_irqsave(&zte_irq_desc->lock, flags);
+		action = zte_irq_desc->action;
+		/* zte_pm wake_prop>0 u can print wake_depth */
+		wake_prop = zte_irq_desc->wake_depth;
+		if (!action)
+			goto unlock;
+
+		pr_info("[IRQ] num=%d, chipName=%10s, actionName=%s", i,
+						zte_irq_desc->irq_data.chip->name ? : "-",
+						action->name);
+		if (wake_prop > 0)
+			pr_info("[IRQ] wake_depth=%d", wake_prop);
+
+		for (action = action->next; action; action = action->next)
+			pr_info("[IRQ] show all action->name=%s\n", action->name);
+
+unlock:
+		raw_spin_unlock_irqrestore(&zte_irq_desc->lock, flags);
+	} else {
+		pr_err("[IRQ] error in dump irq info for irq %d\n", i);
+	}
+}
+/* zte_pm - end */
+
 #ifdef CONFIG_VMAP_STACK
 static void init_irq_stacks(void)
 {
