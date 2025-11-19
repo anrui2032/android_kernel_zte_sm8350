@@ -460,6 +460,9 @@ static void msm_restart_prepare(const char *cmd)
 					     restart_reason);
 		} else if (!strncmp(cmd, "edl", 3)) {
 			enable_emergency_dload_mode();
+		} else if (!strcmp(cmd, "ftmmode")) {
+			reason = PON_RESTART_REASON_FTMMODE;
+			__raw_writel(0x776655ee, restart_reason);
 		} else {
 			__raw_writel(0x77665501, restart_reason);
 		}
