@@ -4,12 +4,12 @@
 &tlmm {
 	display_panel_avdd_default: display_panel_avdd_default {
 		mux {
-			pins = "gpio12";
+			pins = "gpio186";
 			function = "gpio";
 		};
 
 		config {
-			pins = "gpio12";
+			pins = "gpio186";
 			drive-strength = <8>;
 			bias-disable = <0>;
 			output-high;
@@ -24,7 +24,7 @@
 		regulator-min-microvolt = <5500000>;
 		regulator-max-microvolt = <5500000>;
 		regulator-enable-ramp-delay = <233>;
-		gpio = <&tlmm 12 0>;
+		gpio = <&tlmm 186 0>;
 		enable-active-high;
 		regulator-boot-on;
 		proxy-supply = <&display_panel_avdd>;
@@ -88,9 +88,9 @@
 			"shadow_cphybyte_clk1", "shadow_cphypixel_clk1",
 			"mdp_core_clk";
 
-	pinctrl-names = "panel_active", "panel_suspend";
-	pinctrl-0 = <&sde_dsi_active &sde_te_active>;
-	pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend>;
+	pinctrl-names = "panel_active", "panel_suspend", "default";
+	pinctrl-0 = <&sde_dsi_active &sde_te_active &lcd_vddio_enable_default>;
+	pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend &lcd_vddio_disable_default>;
 
 	qcom,platform-te-gpio = <&tlmm 82 0>;
 	qcom,panel-te-source = <0>;

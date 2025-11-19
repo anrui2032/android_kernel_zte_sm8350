@@ -31,19 +31,25 @@
 			debounce-interval = <15>;
 			linux,can-disable;
 		};
+
+		vol_down {
+			label = "volume_down";
+			gpios = <&pm8350_gpios 8 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
 	};
 
 	qcom,qbt_handler {
 		compatible = "qcom,qbt-handler";
-		qcom,ipc-gpio = <&tlmm 38 0>;
-		qcom,finger-detect-gpio = <&tlmm 39 0>;
 	};
 
 	extcon_usb1: extcon_usb1 {
 		compatible = "linux,extcon-usb-gpio";
-		vbus-gpio =  <&pm8350_gpios 9 GPIO_ACTIVE_HIGH>;
 		id-gpio = <&tlmm 51 GPIO_ACTIVE_HIGH>;
-		vbus-out-gpio = <&pm8350_gpios 8 GPIO_ACTIVE_HIGH>;
 
 		pinctrl-names = "default";
 		pinctrl-0 = <&usb2_vbus_det_default
@@ -213,7 +219,7 @@
 };
 
 &usb1 {
-	extcon = <&extcon_usb1>;
+	status = "disable";
 };
 
 &battery_charger {
@@ -224,28 +230,3 @@
 &wil6210 {
 	status = "ok";
 };
-
-&qupv3_se15_i2c {
-	status = "ok";
-	qcom,clk-freq-out = <1000000>;
-	#address-cells = <1>;
-	#size-cells = <0>;
-	nq@28 {
-		compatible = "qcom,sn-nci";
-		reg = <0x28>;
-		qcom,sn-irq = <&tlmm 87 0x00>;
-		qcom,sn-ven = <&tlmm 62 0x00>;
-		qcom,sn-firm = <&tlmm 86 0x00>;
-		qcom,sn-clkreq = <&tlmm 63 0x00>;
-		interrupt-parent = <&tlmm>;
-		interrupts = <87 0>;
-		interrupt-names = "nfc_irq";
-		pinctrl-names = "nfc_active", "nfc_suspend";
-		pinctrl-0 = <&nfc_int_active &nfc_enable_active
-				&nfc_clk_req_active &nfc_fwdl_active>;
-		pinctrl-1 = <&nfc_int_suspend &nfc_enable_suspend
-				&nfc_clk_req_suspend &nfc_fwdl_suspend>;
-	};
-};
-
-#include "camera/lahaina-camera-sensor-mtp.dtsi"

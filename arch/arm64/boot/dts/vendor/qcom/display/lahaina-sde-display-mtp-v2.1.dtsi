@@ -5,11 +5,11 @@
 	qcom,panel-supply-entry@0 {
 		reg = <0>;
 		qcom,supply-name = "vddio";
-		qcom,supply-min-voltage = <2000000>;
-		qcom,supply-max-voltage = <2000000>;
+		qcom,supply-min-voltage = <1800000>;
+		qcom,supply-max-voltage = <1800000>;
 		qcom,supply-enable-load = <60700>;
 		qcom,supply-disable-load = <80>;
-		qcom,supply-post-on-sleep = <20>;
+		qcom,supply-post-on-sleep = <3>;
 	};
 
 	qcom,panel-supply-entry@1 {
@@ -43,5 +43,5 @@
 };
 
 &sde_dsi {
-	qcom,dsi-default-panel = <&dsi_r66451_amoled_cmd>;
+	qcom,dsi-default-panel = <&dsi_visionox_rm692e1_amoled_fhd_cmd>;
 };

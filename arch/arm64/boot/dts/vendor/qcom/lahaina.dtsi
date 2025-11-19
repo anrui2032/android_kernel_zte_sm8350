@@ -61,6 +61,7 @@
 		swr2 = &swr2;
 		usb0 = &usb0;
 		usb1 = &usb1;
+		i2c2 = &qupv3_se2_i2c;
 	};
 
 	firmware: firmware {};
@@ -544,6 +545,15 @@
 	dfps_data_memory: dfps_data_region {
 		reg = <0x0 0xe3300000 0x0 0x0100000>;
 		label = "dfps_data_region";
+	};
+
+	pstore_mem: pstore_region@c0000000 {
+		compatible = "ramoops";
+		reg = <0x0 0xc0000000 0x0 0x200000>;
+		record-size = <0x4000>;
+		console-size = <0x100000>;
+		ftrace-size = <0x40000>;
+		pmsg-size = <0x40000>;
 	};
 
 	memshare_mem: memshare_region {
