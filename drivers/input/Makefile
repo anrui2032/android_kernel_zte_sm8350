@@ -29,3 +29,6 @@ obj-$(CONFIG_INPUT_MISC)	+= misc/
 obj-$(CONFIG_INPUT_APMPOWER)	+= apm-power.o
 
 obj-$(CONFIG_RMI4_CORE)		+= rmi4/
+obj-y += misc/aw9610x_sar/
+obj-$(CONFIG_GOODIX_FINGERPRINT) += fingerprint/goodix/
+obj-$(CONFIG_FORTSENSE_FINGERPRINT) += fingerprint/fortsense/

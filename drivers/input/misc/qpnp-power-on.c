@@ -27,6 +27,17 @@
 #include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
 
+#ifdef CONFIG_ZTE_BOOT_MODE
+#include <linux/reboot.h>
+#include <soc/qcom/restart.h>
+#include <soc/qcom/socinfo.h>
+#include <linux/qcom_scm.h>
+#include <linux/of_platform.h>
+#include <linux/of_gpio.h>
+#include <linux/gpio.h>
+#include <linux/usb/ucsi_glink.h>
+#endif
+
 #define PMIC_VER_8941				0x01
 #define PMIC_VERSION_REG			0x0105
 #define PMIC_VERSION_REV4_REG			0x0103
@@ -77,6 +88,7 @@ enum qpnp_pon_version {
 #define QPNP_PON_KPDPWR_S1_TIMER(pon)		((pon)->base + 0x40)
 #define QPNP_PON_KPDPWR_S2_TIMER(pon)		((pon)->base + 0x41)
 #define QPNP_PON_KPDPWR_S2_CNTL(pon)		((pon)->base + 0x42)
+#define QPNP_PON_PBS_KPDPWR_S2_CNTL(pon)	((pon)->pbs_base + 0x42)
 #define QPNP_PON_KPDPWR_S2_CNTL2(pon)		((pon)->base + 0x43)
 #define QPNP_PON_RESIN_S1_TIMER(pon)		((pon)->base + 0x44)
 #define QPNP_PON_RESIN_S2_TIMER(pon)		((pon)->base + 0x45)
@@ -246,6 +258,16 @@ struct qpnp_pon {
 	ktime_t			kpdpwr_last_release_time;
 	bool			legacy_hard_reset_offset;
 	bool			log_kpd_event;
+/* ZTE ADD for BOOT_MODE start */
+#ifdef CONFIG_ZTE_BOOT_MODE
+	struct timer_list       timer;
+	struct work_struct      pwrkey_poweroff_work;
+	struct notifier_block   ucsi_nb;
+	bool                    usb_connected;
+	int                     vol_up_gpio;
+	int                     vol_dn_gpio;
+#endif
+/* ZTE ADD for BOOT_MODE end */
 };
 
 static struct qpnp_pon *sys_reset_dev;
@@ -966,6 +988,119 @@ static int qpnp_pon_store_and_clear_warm_reset(struct qpnp_pon *pon)
 	return 0;
 }
 
+/* ZTE ADD for BOOT_MODE start */
+#ifdef CONFIG_ZTE_BOOT_MODE
+extern int socinfo_get_ftm_flag(void);
+
+static void vendor_mod_ponreg(struct qpnp_pon *pon)
+{
+	dev_info(pon->dev, "%s: modify s2 warm reset\n", __func__);
+	if (is_pon_gen3(pon) && pon->pbs_base) {
+		qpnp_pon_write(pon, QPNP_PON_PBS_KPDPWR_S2_CNTL(pon),
+			(u8)PON_POWER_OFF_TYPE_WARM_RESET);
+	} else {
+		qpnp_pon_masked_write(pon, QPNP_PON_KPDPWR_S2_CNTL(pon),
+			QPNP_PON_S2_CNTL_TYPE_MASK,
+			(u8)PON_POWER_OFF_TYPE_WARM_RESET);
+	}
+}
+
+static bool usb_cable_connected(struct qpnp_pon *pon)
+{
+	dev_info(pon->dev, "qpnp pon %s: %d\n", __func__, pon->usb_connected);
+	return pon->usb_connected;
+}
+
+static int qpnp_ucsi_notifier(struct notifier_block *nb,
+		unsigned long action, void *data)
+{
+	struct qpnp_pon *pon = container_of(nb, struct qpnp_pon, ucsi_nb);
+	struct ucsi_glink_constat_info *info = data;
+
+	if (info->connect && info->partner_usb)
+		pon->usb_connected = true;
+	else
+		pon->usb_connected = false;
+
+	return NOTIFY_OK;
+}
+
+static bool vendor_volume_keys_pressed(struct qpnp_pon *pon)
+{
+	int vol_up, vol_dn;
+	struct device_node *gpio_key_node = NULL;
+	struct device_node *child_node = NULL;
+	bool ret = false;
+	static bool key_gpio_initialized = false;
+
+	if (!key_gpio_initialized) {
+		gpio_key_node = of_find_compatible_node(NULL, NULL, "gpio-keys");
+		if (gpio_key_node) {
+			for_each_available_child_of_node(gpio_key_node, child_node) {
+				if (!strcmp(child_node->name, "vol_up")) {
+					pon->vol_up_gpio = of_get_named_gpio(child_node, "gpios", 0);
+				} else if (!strcmp(child_node->name, "vol_down")) {
+					pon->vol_dn_gpio = of_get_named_gpio(child_node, "gpios", 0);
+				}
+			}
+		} else {
+			dev_err(pon->dev, "unable to find DT node: gpio-keys\n");
+		}
+		key_gpio_initialized = true;
+	}
+
+	if (gpio_is_valid(pon->vol_up_gpio) && gpio_is_valid(pon->vol_dn_gpio)) {
+		vol_up = !gpio_get_value(pon->vol_up_gpio);
+		vol_dn = !gpio_get_value(pon->vol_dn_gpio);
+		pr_debug("%s: vol_up(%d), vol_dn(%d)\n", __func__, vol_up, vol_dn);
+		ret = vol_up && vol_dn;
+	} else {
+		dev_err(pon->dev, "%s: invalid gpio\n", __func__);
+	}
+	return ret;
+}
+
+static void pwrkey_poweroff(struct work_struct *work)
+{
+	struct qpnp_pon *pon = container_of(work, struct qpnp_pon, pwrkey_poweroff_work);
+
+	if ((vendor_volume_keys_pressed(pon)) && usb_cable_connected(pon)) {
+		dev_info(pon->dev, "%s: power key long pressed, trigger s2 warm reset\n", __func__);
+		qcom_scm_set_download_mode(QCOM_DOWNLOAD_FULLDUMP, 0);
+		vendor_mod_ponreg(pon);
+	} else {
+		dev_info(pon->dev, "%s: power key long pressed, trigger kernel reboot\n", __func__);
+		kernel_restart("LONGPRESS");
+	}
+}
+
+static void pwrkey_timer(struct timer_list *t)
+{
+
+	struct qpnp_pon *pon = from_timer(pon, t, timer);
+
+	schedule_work(&pon->pwrkey_poweroff_work);
+}
+
+void zte_set_timer(struct qpnp_pon *pon)
+{
+	if (socinfo_get_ftm_flag() == 1) {
+		pon->timer.expires = jiffies + 3 * HZ;
+		dev_info(pon->dev, "%s: FTM mode,start 3s timer for reboot\n", __func__);
+	} else {
+		#ifdef CONFIG_ZTE_PWRKEY_HARDRESET_TIMEOUT
+			pon->timer.expires = jiffies + CONFIG_ZTE_PWRKEY_HARDRESET_TIMEOUT * HZ;
+			dev_info(pon->dev, "%s: Normal mode,start 16s timer for reboot\n", __func__);
+		#else
+			pon->timer.expires = jiffies + 10 * HZ;
+			dev_info(pon->dev, "%s: Normal mode,start 10s timer for reboot\n", __func__);
+		#endif
+	}
+	mod_timer(&pon->timer, pon->timer.expires);
+}
+#endif
+/* ZTE ADD for BOOT_MODE end */
+
 static struct qpnp_pon_config *qpnp_get_cfg(struct qpnp_pon *pon, u32 pon_type)
 {
 	int i;
@@ -1030,7 +1165,7 @@ static int qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 		return -EINVAL;
 	}
 
-	pr_debug("PMIC input: code=%d, status=0x%02X\n", cfg->key_code,
+	pr_info("PMIC input: code=%d, status=0x%02X\n", cfg->key_code,
 		pon_rt_sts);
 	key_status = pon_rt_sts & pon_rt_bit;
 
@@ -1057,6 +1192,14 @@ static int qpnp_pon_input_dispatch(struct qpnp_pon *pon, u32 pon_type)
 
 	cfg->old_state = !!key_status;
 
+/* ZTE ADD for BOOT_MODE start */
+#ifdef CONFIG_ZTE_BOOT_MODE
+	if ((cfg->pon_type == PON_KPDPWR) && key_status)
+		zte_set_timer(pon);
+	else
+		del_timer(&pon->timer);
+#endif
+/* ZTE ADD for BOOT_MODE end */
 	return 0;
 }
 
@@ -2485,6 +2628,15 @@ static int qpnp_pon_probe(struct platform_device *pdev)
 
 	pon->log_kpd_event = of_property_read_bool(dev->of_node, "qcom,log-kpd-event");
 
+/* ZTE ADD for BOOT_MODE start */
+#ifdef CONFIG_ZTE_BOOT_MODE
+	timer_setup(&pon->timer, pwrkey_timer, 0);
+	INIT_WORK(&pon->pwrkey_poweroff_work, pwrkey_poweroff);
+	pon->ucsi_nb.notifier_call = qpnp_ucsi_notifier;
+	register_ucsi_glink_notifier(&pon->ucsi_nb);
+#endif
+/* ZTE ADD for BOOT_MODE end */
+
 	/* Register the PON configurations */
 	rc = qpnp_pon_config_init(pon, pdev);
 	if (rc)
@@ -2515,6 +2667,10 @@ static int qpnp_pon_remove(struct platform_device *pdev)
 	device_remove_file(&pdev->dev, &dev_attr_debounce_us);
 
 	cancel_delayed_work_sync(&pon->bark_work);
+
+#ifdef CONFIG_ZTE_BOOT_MODE
+	unregister_ucsi_glink_notifier(&pon->ucsi_nb);
+#endif
 
 	qpnp_pon_debugfs_remove(pon);
 	if (pon->is_spon) {
