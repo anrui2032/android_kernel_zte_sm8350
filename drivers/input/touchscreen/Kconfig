@@ -12,9 +12,50 @@ menuconfig INPUT_TOUCHSCREEN
 
 if INPUT_TOUCHSCREEN
 
+config TS_FIRMWARE
+	string "config board firmware folder"
+
+source "drivers/input/touchscreen/gtx8_zte/Kconfig"
+source "drivers/input/touchscreen/goodix_berlin_driver_zte/Kconfig"
 config TOUCHSCREEN_PROPERTIES
 	def_tristate INPUT
 	depends on INPUT
+
+config TP_COMMON_INTERFACE
+	bool "tp proc folder"
+	help
+	  Say Y here if you  want to have a common tp proc folder
+	  If unsure, say N.
+
+config TPD_UFP_MAC
+	bool "tp under fingerprint status machine"
+	default n
+	help
+	  Say Y here if you want to have a under fingerprint status machine
+	  If unsure, say N.
+
+config POINT_SIMULAT_UF
+	bool "tp under fingerprint status machine"
+	default n
+	help
+	  Say Y here if you want to simulate finger down
+	  If unsure, say N.
+
+config SCREEN_ON_TEMP_SUPPORT
+	bool "lcd has a temp on when off to aod"
+	depends on TPD_UFP_MAC
+	default n
+	help
+	  Say y here if your lcd has a temp on when off to aod
+	  if unsure, say n.
+
+config DRM_PANEL_NOTIFIER
+	bool "simulation trigger under fingerprint"
+	default n
+	help
+	  Say Y here to enable debug tools.
+
+	  If unsure, say N.
 
 config TOUCHSCREEN_88PM860X
 	tristate "Marvell 88PM860x touchscreen"
@@ -1314,6 +1355,18 @@ config TOUCHSCREEN_IQS5XX
 source "drivers/input/touchscreen/st/Kconfig"
 
 source "drivers/input/touchscreen/focaltech_touch/Kconfig"
+
+config TOUCHSCREEN_SYNAPTICS_TCM
+	bool "Synaptics TCM Touchscreen Driver"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you have a Synaptics Touchscreen.
+
+	  If unsure, say N.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called synaptics_tcm.
 
 source "drivers/input/touchscreen/synaptics_tcm/Kconfig"
 
