@@ -33,6 +33,13 @@ struct mutex hphr_pa_lock;
 void wcd_mbhc_jack_report(struct wcd_mbhc *mbhc,
 			  struct snd_soc_jack *jack, int status, int mask)
 {
+	/* ZTE_chenjun */
+	if (jack == &mbhc->headset_jack) {
+		pr_info("%s: headset_jack status(%#X)\n", __func__, status);
+	} else if (jack == &mbhc->button_jack) {
+		pr_info("%s: button_jack status(%#X)\n", __func__, status);
+	}
+
 	snd_soc_jack_report(jack, status, mask);
 }
 EXPORT_SYMBOL(wcd_mbhc_jack_report);
@@ -731,7 +738,7 @@ void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 							mbhc->hph_status,
 							WCD_MBHC_JACK_MASK);
 				}
-				pr_debug("%s: Marking jack type as SND_JACK_LINEOUT\n",
+				pr_info("%s: Marking jack type as SND_JACK_LINEOUT\n",
 				__func__);
 			}
 		}
@@ -789,8 +796,13 @@ void wcd_mbhc_elec_hs_report_unplug(struct wcd_mbhc *mbhc)
 	else
 		pr_info("%s: hs_detect_plug work not cancelled\n", __func__);
 
-	pr_debug("%s: Report extension cable\n", __func__);
-	wcd_mbhc_report_plug(mbhc, 1, SND_JACK_LINEOUT);
+	if (mbhc->current_plug != MBHC_PLUG_TYPE_NONE) {
+		pr_debug("%s: Report extension cable\n", __func__);
+		wcd_mbhc_report_plug(mbhc, 1, SND_JACK_LINEOUT);
+	} else {
+		pr_info("%s: Don't report extension cable\n", __func__);
+	}
+
 	/*
 	 * If PA is enabled HPHL schmitt trigger can
 	 * be unreliable, make sure to disable it
@@ -1096,7 +1108,7 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 	int r = IRQ_HANDLED;
 	struct wcd_mbhc *mbhc = data;
 
-	pr_debug("%s: enter\n", __func__);
+	pr_info("%s: enter\n", __func__);
 	if (mbhc == NULL) {
 		pr_err("%s: NULL irq data\n", __func__);
 		return IRQ_NONE;
@@ -1199,7 +1211,7 @@ static irqreturn_t wcd_mbhc_btn_press_handler(int irq, void *data)
 	int mask;
 	unsigned long msec_val;
 
-	pr_debug("%s: enter\n", __func__);
+	pr_info("%s: enter\n", __func__);
 	complete(&mbhc->btn_press_compl);
 	WCD_MBHC_RSC_LOCK(mbhc);
 	wcd_cancel_btn_work(mbhc);
@@ -1249,7 +1261,7 @@ static irqreturn_t wcd_mbhc_release_handler(int irq, void *data)
 	struct wcd_mbhc *mbhc = data;
 	int ret;
 
-	pr_debug("%s: enter\n", __func__);
+	pr_info("%s: enter\n", __func__);
 	WCD_MBHC_RSC_LOCK(mbhc);
 	if (wcd_swch_level_remove(mbhc)) {
 		pr_debug("%s: Switch level is low ", __func__);
@@ -1629,7 +1641,7 @@ static int wcd_mbhc_usbc_ana_event_handler(struct notifier_block *nb,
 	if (!mbhc)
 		return -EINVAL;
 
-	dev_dbg(mbhc->component->dev, "%s: mode = %lu\n", __func__, mode);
+	dev_info(mbhc->component->dev, "%s: mode = %lu\n", __func__, mode);
 
 	if (mode == TYPEC_ACCESSORY_AUDIO) {
 		if (mbhc->mbhc_cb->clk_setup)
@@ -1672,10 +1684,10 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 				&mbhc_cfg->enable_usbc_analog);
 	}
 	if (mbhc_cfg->enable_usbc_analog == 0 || rc != 0) {
-		dev_dbg(card->dev,
+		dev_info(card->dev,
 				"%s: %s in dt node is missing or false\n",
 				__func__, usb_c_dt);
-		dev_dbg(card->dev,
+		dev_info(card->dev,
 			"%s: skipping USB c analog configuration\n", __func__);
 	}
 
