@@ -86,11 +86,13 @@ struct swr_haptics_dev {
 	struct snd_soc_component	*component;
 	struct regmap			*regmap;
 	struct swr_port			port;
+	struct regulator		*vdd;
 	struct regulator		*slave_vdd;
 	struct regulator		*hpwr_vreg;
 	u32				hpwr_voltage_mv;
 	bool				slave_enabled;
 	bool				hpwr_vreg_enabled;
+	u32 enable_cnt;
 	bool				ssr_recovery;
 	u8				vmax;
 	u8				flags;
@@ -291,6 +293,9 @@ static int hap_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 				&ch_mask, &ch_rate, &num_ch, &port_type);
 		break;
 	case SND_SOC_DAPM_POST_PMU:
+		swr_slvdev_datapath_control(swr_hap->swr_slave,
+				swr_hap->swr_slave->dev_num, true);
+
 		rc = swr_hap_enable_hpwr_vreg(swr_hap, true);
 		if (rc < 0) {
 			dev_err(swr_hap->dev, "%s: Enable hpwr_vreg failed, rc=%d\n",
@@ -298,8 +303,6 @@ static int hap_enable_swr_dac_port(struct snd_soc_dapm_widget *w,
 			return rc;
 		}
 
-		swr_slvdev_datapath_control(swr_hap->swr_slave,
-				swr_hap->swr_slave->dev_num, true);
 		/* trigger SWR play */
 		val = SWR_PLAY_BIT | SWR_PLAY_SRC_VAL_SWR;
 		rc = regmap_write(swr_hap->regmap, SWR_PLAY_REG, val);
