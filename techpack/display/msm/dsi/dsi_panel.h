@@ -28,6 +28,92 @@
 
 #define DSI_CMD_PPS_HDR_SIZE 7
 #define DSI_MODE_MAX 32
+/* zte add common function for lcd module begin */
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+// #define CONFIG_ZTE_LCD_BACKLIGHT_LEVEL_CURVE
+// #define CONFIG_ZTE_LCD_GPIO_CTRL_POWER
+// #define CONFIG_ZTE_LCD_HBM_CTRL
+// #define CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+// #define CONFIG_ZTE_LCD_COLOR_GAMUT_CTRL
+// #define CONFIG_ZTE_LCD_ACL_CTRL
+// #define CONFIG_ZTE_LCD_REPORT_CURRENT_FPS
+
+#ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
+#define BUF_LEN_MAX    256
+struct dsi_read_config {
+	bool is_read;
+	struct dsi_panel_cmd_set read_cmd;
+	u32 cmds_rlen;
+	u32 valid_bits;
+	u8 rbuf[BUF_LEN_MAX];
+};
+#endif
+struct zte_lcd_ctrl_data {
+	const char *zte_lcd_info;
+	char lcd_reset_high_sleeping;
+	int lcd_dimreg_value;
+	int lcd_close_dimreg_value;
+	u16 lcd_restore_bl;
+	u16 lcd_real_bl;
+	int zte_panel_state;
+	bool lcd_aod_bl_forbidden;
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	u32 zte_lcd_hbm;
+	u32 zte_lcd_hdr;
+	u32 zte_lcd_fgp;
+	u32 lcd_hbm_max_bl;
+	u32 lcd_pre_hbm_mode;
+	bool lcd_hbm_bl_reg51_control;
+	bool lcd_hbm_reg51_instant_enabled;
+	bool lcd_hbm_bl_reg53_control;
+	bool hbm_exit_need_dim;
+	bool lcd_hbm_commit_enabled;
+#endif
+#ifdef CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+	u32 zte_lcd_aod_brightness;
+	bool lcd_enter_aod_first_set_bl;
+	bool lcd_aod_bl_reg51_control;
+	bool lcd_aod_bl_reg53_control;
+	struct delayed_work lcd_exit_aod_delayed_work;
+#endif
+#ifdef CONFIG_ZTE_LCD_REPORT_CURRENT_FPS
+	u32 zte_lcd_cur_fps;
+	u32 zte_lcd_new_fps;
+#endif
+#ifdef CONFIG_ZTE_LCD_BACKLIGHT_LEVEL_CURVE
+	u32 lcd_bl_curve_mode;
+	int (*zte_convert_brightness)(int level, u32 bl_max);
+#endif
+#ifdef CONFIG_ZTE_LCD_GPIO_CTRL_POWER
+	int disp_avdd_en_gpio;
+	int disp_iovdd_en_gpio;
+	int disp_iovdd_always_on;
+	int disp_vsp_en_gpio;
+	int disp_vsn_en_gpio;
+	int (*zte_gpio_enable_lcd_power)(int enable);
+#endif
+#ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
+	int disp_2dbl_en_gpio;
+	int disp_3dbl_en_gpio;
+	int disp_3dbl_adc_gpio;
+	u32 zte_lcd_bl_switch;
+	u32 zte_lcd_gamma_switch;
+	bool zte_lcd_2d;
+	bool zte_lcd_3d;
+	u16 zte_3d_bl;
+	u32 zte_lcd_dsi_id;
+	u32 zte_lcd_off;
+	u32 zte_lcd_gesture;
+#endif
+#ifdef CONFIG_ZTE_LCD_COLOR_GAMUT_CTRL
+	u32 zte_lcd_color_gamut;
+#endif
+#ifdef CONFIG_ZTE_LCD_ACL_CTRL
+	u32 zte_lcd_acl;
+#endif
+};
+#endif
+/* zte add common function for lcd module end */
 
 /*
  * Defining custom dsi msg flag,
@@ -267,6 +353,11 @@ struct dsi_panel {
 	u32 tlmm_gpio_count;
 
 	struct dsi_panel_ops panel_ops;
+/* zte add common function for lcd module begin */
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+	struct zte_lcd_ctrl_data *zte_lcd_ctrl;
+#endif
+/* zte add common function for lcd module end */
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
@@ -402,4 +493,13 @@ int dsi_panel_create_cmd_packets(const char *data, u32 length, u32 count,
 void dsi_panel_destroy_cmd_packets(struct dsi_panel_cmd_set *set);
 
 void dsi_panel_dealloc_cmd_packets(struct dsi_panel_cmd_set *set);
+
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+int zte_dsi_panel_tx_cmd_set(struct dsi_panel *panel, enum dsi_cmd_set_type type); /* add by zte for send lcd dtsi cmds */
+int zte_mipi_dsi_dcs_set_display_brightness(struct mipi_dsi_device *dsi, u16 brightness);
+int zte_mipi_dsi_set_real_bl_level(struct mipi_dsi_device *dsi,	u16 brightness);
+#endif
+#ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
+int zte_dsi_panel_set_fps(struct dsi_panel *panel,int fps);
+#endif
 #endif /* _DSI_PANEL_H_ */

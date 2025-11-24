@@ -50,6 +50,9 @@
 #include <drm/drm_dsc.h>
 
 #include "sde_power_handle.h"
+#ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
+#include "zte_disp/zte_disp_i2c.h"
+#endif
 
 #define GET_MAJOR_REV(rev)		((rev) >> 28)
 #define GET_MINOR_REV(rev)		(((rev) >> 16) & 0xFFF)

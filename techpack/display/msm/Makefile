@@ -99,6 +99,17 @@ msm_drm-$(CONFIG_DRM_SDE_RSC) += sde_rsc.o \
 	sde_rsc_hw.o \
 	sde_rsc_hw_v3.o
 
+ifeq ($(CONFIG_ZTE_LCD_COMMON_FUNCTION), y)
+ifeq ($(CONFIG_ZTE_LCD_LEIA_EN_GPIO), y)
+msm_drm-$(CONFIG_DRM_MSM_DSI) += zte_disp/zte_lcd_lp8555.o
+msm_drm-$(CONFIG_DRM_MSM_DSI) += zte_disp/zte_lcd_lp8555_3d1.o
+msm_drm-$(CONFIG_DRM_MSM_DSI) += zte_disp/zte_lcd_lp8555_3d2.o
+msm_drm-$(CONFIG_DRM_MSM_DSI) += zte_disp/zte_lcd_lp8555_3d3.o
+msm_drm-$(CONFIG_DRM_MSM_DSI) += zte_disp/zte_lcd_lp8555_3d4.o
+msm_drm-$(CONFIG_DRM_MSM_DSI) += zte_disp/zte_lcd_tps65132b_i2c.o
+endif
+endif
+
 msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/dsi_phy.o \
 	dsi/dsi_pwr.o \
 	dsi/dsi_phy.o \
@@ -125,6 +136,16 @@ msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/dsi_phy.o \
 	dsi/dsi_display_test.o
 
 msm_drm-$(CONFIG_DSI_PARSER) += dsi/dsi_parser.o
+
+ifeq ($(CONFIG_ZTE_LCD_COMMON_FUNCTION), y)
+msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/zte_lcd_common.o
+ifeq ($(CONFIG_ZTE_LCD_REG_DEBUG), y)
+msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/zte_lcd_reg_debug.o
+endif
+ifeq ($(CONFIG_ZTE_LCD_LEIA_EN_GPIO), y)
+msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/zte_leia_3d_bl.o
+endif
+endif
 
 msm_drm-$(CONFIG_DRM_MSM) += \
 	msm_atomic.o \

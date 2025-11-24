@@ -92,6 +92,9 @@ static inline struct sde_kms *_sde_connector_get_kms(struct drm_connector *conn)
 	return to_sde_kms(priv->kms);
 }
 
+#ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
+extern void i2c_set_brightness(u16 brightness);
+#endif
 static int sde_backlight_device_update_status(struct backlight_device *bd)
 {
 	int brightness;
@@ -133,6 +136,15 @@ static int sde_backlight_device_update_status(struct backlight_device *bd)
 		}
 	}
 
+#ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
+	if ((bd->props.power != FB_BLANK_UNBLANK) ||
+		(bd->props.state & BL_CORE_FBBLANK) ||
+		(bd->props.state & BL_CORE_SUSPENDED)) {
+		if (display->panel->zte_lcd_ctrl->zte_lcd_3d) {
+			i2c_set_brightness(0);
+		}
+	}
+#endif
 	if (brightness > bl_max_level)
 		brightness = bl_max_level;
 	if (brightness > c_conn->thermal_max_brightness)
@@ -244,7 +256,7 @@ static int sde_backlight_setup(struct sde_connector *c_conn,
 	props.type = BACKLIGHT_RAW;
 	props.power = FB_BLANK_UNBLANK;
 	props.max_brightness = brightness_max_level;
-	props.brightness = brightness_max_level;
+	props.brightness = brightness_max_level / 2; /* ZTE change brightness for bootanimation */
 	snprintf(bl_node_name, BL_NODE_NAME_SIZE, "panel%u-backlight",
 							display_count);
 	c_conn->bl_device = backlight_device_register(bl_node_name, dev->dev,

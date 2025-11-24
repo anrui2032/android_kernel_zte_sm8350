@@ -22,6 +22,14 @@
 #include "msm_kms.h"
 #include "sde_trace.h"
 #include <drm/drm_atomic_uapi.h>
+/* add by zte for hbm zorder CONFIG_ZTE_LCD_HBM_CTRL */
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+#include <linux/time.h>
+#include "zte_lcd_common.h"
+#include "./dsi/dsi_panel.h"
+extern struct dsi_panel *g_zte_ctrl_pdata;
+#endif
+/* add by zte for hbm zorder CONFIG_ZTE_LCD_HBM_CTRL end */
 
 #define MULTIPLE_CONN_DETECTED(x) (x > 1)
 
@@ -511,7 +519,58 @@ static void complete_commit(struct msm_commit *c)
 	drm_atomic_helper_commit_planes(dev, state,
 				DRM_PLANE_COMMIT_ACTIVE_ONLY);
 
+#if defined(CONFIG_ZTE_LCD_HBM_CTRL)
+	// #if defined(ZTE_FEATURE_SUR_CONTROL_LCD_HBM_PRO)
+	if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_hbm_reg51_instant_enabled) {
+		if (g_zte_ctrl_pdata->zte_lcd_ctrl->zte_lcd_hbm == 0) {
+			if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode == 3) {
+				drm_atomic_helper_wait_for_vblanks(dev, state);
+			}
+		}
+	} else { // #else
+		if (g_zte_ctrl_pdata->zte_lcd_ctrl->zte_lcd_hbm == 1) {
+			if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode == 2) {
+				g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode = 0; // zte back to 0 for adb command
+				zte_node_write_panel(ZTE_LCD_HBM_CTRL, 0);
+				drm_atomic_helper_wait_for_vblanks(dev, state);
+			}
+		}
+	}
+
 	msm_atomic_helper_commit_modeset_enables(dev, state);
+
+	// #if defined(ZTE_FEATURE_SUR_CONTROL_LCD_HBM_PRO)
+	if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_hbm_reg51_instant_enabled) {
+		if (g_zte_ctrl_pdata->zte_lcd_ctrl->zte_lcd_hbm == 0) {
+			if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode == 3) {
+			g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode = 1; // zte back to 1 for adb command
+			#ifdef CONFIG_ZTE_LCD_REPORT_CURRENT_FPS
+				usleep_range((1000/g_zte_ctrl_pdata->zte_lcd_ctrl->zte_lcd_cur_fps-3)*1000,
+					(1000/g_zte_ctrl_pdata->zte_lcd_ctrl->zte_lcd_cur_fps-3)*1000);
+			// pr_info("[MSM_LCD]HBM zte_lcd_cur_fps=%d\n", g_zte_ctrl_pdata->zte_lcd_ctrl->zte_lcd_cur_fps);
+			#else
+				usleep_range(13*1000, 13*1000);
+			#endif
+				zte_node_write_panel(ZTE_LCD_HBM_CTRL, 1);
+			}
+		} else if (g_zte_ctrl_pdata->zte_lcd_ctrl->zte_lcd_hbm == 1) {
+			if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode == 2) {
+				g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode = 0; // zte back to 0 for adb command
+				// usleep_range(8*1000, 8*1000); // if mdss clk bigger need delay
+				zte_node_write_panel(ZTE_LCD_HBM_CTRL, 0);
+			}
+		}
+	} else { // #else
+		if (g_zte_ctrl_pdata->zte_lcd_ctrl->zte_lcd_hbm == 0) {
+			if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode == 3) {
+				g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_pre_hbm_mode = 1; // zte back to 1 for adb command
+				zte_node_write_panel(ZTE_LCD_HBM_CTRL, 1);
+			}
+		}
+	}
+#else
+	msm_atomic_helper_commit_modeset_enables(dev, state);
+#endif
 
 	/* NOTE: _wait_for_vblanks() only waits for vblank on
 	 * enabled CRTCs.  So we end up faulting when disabling

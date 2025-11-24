@@ -2267,6 +2267,14 @@ static int __init msm_drm_register(void)
 		return -EINVAL;
 
 	DBG("init");
+#ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
+	lp8555_i2c_driver_init();
+	lp8555_3d1_i2c_driver_init();
+	lp8555_3d2_i2c_driver_init();
+	lp8555_3d3_i2c_driver_init();
+	lp8555_3d4_i2c_driver_init();
+	tps65132b_i2c_driver_init();
+#endif
 	sde_rsc_rpmh_register();
 	sde_rsc_register();
 	dsi_display_register();
@@ -2295,6 +2303,14 @@ static void __exit msm_drm_unregister(void)
 	dp_display_unregister();
 	dsi_display_unregister();
 	sde_rsc_unregister();
+#ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
+	lp8555_i2c_driver_exit();
+	lp8555_3d1_i2c_driver_exit();
+	lp8555_3d2_i2c_driver_exit();
+	lp8555_3d3_i2c_driver_exit();
+	lp8555_3d4_i2c_driver_exit();
+	tps65132b_i2c_driver_exit();
+#endif
 }
 
 module_init(msm_drm_register);
