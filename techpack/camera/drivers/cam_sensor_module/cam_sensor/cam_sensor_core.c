@@ -12,7 +12,9 @@
 #include "cam_trace.h"
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
+#include "zte_camera_sensor_util.h"
 
+static uint16_t sensor_slave_switch_addr_enable = 0;
 
 static int cam_sensor_update_req_mgr(
 	struct cam_sensor_ctrl_t *s_ctrl,
@@ -314,7 +316,7 @@ static int32_t cam_sensor_i2c_pkt_parse(struct cam_sensor_ctrl_t *s_ctrl,
 	rc = cam_sensor_i2c_command_parser(&s_ctrl->io_master_info,
 			i2c_reg_settings, cmd_desc, 1, io_cfg);
 	if (rc < 0) {
-		CAM_ERR(CAM_SENSOR, "Fail parsing I2C Pkt: %d", rc);
+		CAM_ERR(CAM_SENSOR, "Fail parsing I2C Pkt: %d  sid 0x%x", rc, s_ctrl->io_master_info.cci_client->sid);
 		goto end;
 	}
 
@@ -353,8 +355,8 @@ static int32_t cam_sensor_i2c_modes_util(
 			&(i2c_list->i2c_settings));
 		if (rc < 0) {
 			CAM_ERR(CAM_SENSOR,
-				"Failed to random write I2C settings: %d",
-				rc);
+				"Failed to random write I2C settings: %d sid = 0x%x",
+				rc, io_master_info->cci_client->sid);
 			return rc;
 		}
 	} else if (i2c_list->op_code == CAM_SENSOR_I2C_WRITE_SEQ) {
@@ -426,6 +428,12 @@ int32_t cam_sensor_update_i2c_info(struct cam_cmd_i2c_info *i2c_info,
 
 	s_ctrl->sensordata->slave_info.sensor_slave_addr =
 		i2c_info->slave_addr;
+	s_ctrl->sensordata->slave_info.sensor_slave_second_addr =
+		i2c_info->slave_switch_addr & 0xff;
+	s_ctrl->sensordata->slave_info.sensor_slave_switch_addr =
+		(i2c_info->slave_switch_addr >> 8) & 0xff;
+	s_ctrl->sensordata->slave_info.sensor_slave_reg_addr = i2c_info->slave_reg_addr;
+
 	return rc;
 }
 
@@ -696,11 +704,19 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
-	rc = camera_io_dev_read(
-		&(s_ctrl->io_master_info),
-		slave_info->sensor_id_reg_addr,
-		&chipid, CAMERA_SENSOR_I2C_TYPE_WORD,
-		CAMERA_SENSOR_I2C_TYPE_WORD);
+	if (s_ctrl->sensor_probe_addr_type == CAMERA_SENSOR_I2C_TYPE_BYTE) {
+		rc = camera_io_dev_read(
+			&(s_ctrl->io_master_info),
+			slave_info->sensor_id_reg_addr,
+			&chipid, CAMERA_SENSOR_I2C_TYPE_BYTE,
+			CAMERA_SENSOR_I2C_TYPE_WORD);
+	} else {
+		rc = camera_io_dev_read(
+			&(s_ctrl->io_master_info),
+			slave_info->sensor_id_reg_addr,
+			&chipid, CAMERA_SENSOR_I2C_TYPE_WORD,
+			CAMERA_SENSOR_I2C_TYPE_WORD);
+	}
 
 	CAM_DBG(CAM_SENSOR, "read id: 0x%x expected id 0x%x:",
 		chipid, slave_info->sensor_id);
@@ -790,6 +806,16 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 
 		/* Match sensor ID */
 		rc = cam_sensor_match_id(s_ctrl);
+		if ((rc < 0) && (s_ctrl->sensordata->slave_info.sensor_slave_second_addr)) {
+			s_ctrl->io_master_info.cci_client->sid = s_ctrl->sensordata->slave_info.sensor_slave_second_addr >> 1;
+			rc = cam_sensor_match_id(s_ctrl);
+			if (!rc) {
+				sensor_slave_switch_addr_enable = 1;
+				s_ctrl->sensordata->slave_info.sensor_slave_addr = s_ctrl->sensordata->slave_info.sensor_slave_second_addr;
+				CAM_ERR(CAM_SENSOR, "%s:%d: sensor_slave_switch_addr_enable = %d", sensor_slave_switch_addr_enable);
+			}
+		}
+
 		if (rc < 0) {
 			cam_sensor_power_down(s_ctrl);
 			msleep(20);
@@ -797,9 +823,10 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		}
 
 		CAM_INFO(CAM_SENSOR,
-			"Probe success,slot:%d,slave_addr:0x%x,sensor_id:0x%x",
+			"Probe success,slot:%d,slave_addr:0x%x,sensor_slave_second_addr:0x%x, sensor_id:0x%x",
 			s_ctrl->soc_info.index,
 			s_ctrl->sensordata->slave_info.sensor_slave_addr,
+			s_ctrl->sensordata->slave_info.sensor_slave_second_addr,
 			s_ctrl->sensordata->slave_info.sensor_id);
 
 		rc = cam_sensor_power_down(s_ctrl);
@@ -813,6 +840,8 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		 */
 		s_ctrl->is_probe_succeed = 1;
 		s_ctrl->sensor_state = CAM_SENSOR_INIT;
+
+		msm_sensor_enable_debugfs(s_ctrl);
 	}
 		break;
 	case CAM_ACQUIRE_DEV: {
@@ -872,6 +901,20 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		if (rc < 0) {
 			CAM_ERR(CAM_SENSOR, "Sensor Power up failed");
 			goto release_mutex;
+		} else {
+			if (sensor_slave_switch_addr_enable && s_ctrl->sensordata->slave_info.sensor_slave_switch_addr) {
+				s_ctrl->io_master_info.cci_client->sid = s_ctrl->sensordata->slave_info.sensor_slave_addr >> 1;
+				rc = zte_cam_cci_i2c_write(&(s_ctrl->io_master_info),
+					s_ctrl->sensordata->slave_info.sensor_slave_reg_addr, s_ctrl->sensordata->slave_info.sensor_slave_switch_addr,
+					CAMERA_SENSOR_I2C_TYPE_WORD,
+					CAMERA_SENSOR_I2C_TYPE_BYTE);
+				if (rc < 0) {
+					CAM_ERR(CAM_SENSOR, "i2c write  failed");
+					pr_err("sensor_slave_reg_addr %d: i2c write  failed", __func__, __LINE__, s_ctrl->sensordata->slave_info.sensor_slave_reg_addr);
+					goto release_mutex;
+				}
+				s_ctrl->io_master_info.cci_client->sid = s_ctrl->sensordata->slave_info.sensor_slave_switch_addr >> 1;
+			}
 		}
 
 		s_ctrl->sensor_state = CAM_SENSOR_ACQUIRE;
