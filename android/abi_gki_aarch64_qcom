@@ -2209,6 +2209,7 @@
   simple_statfs
   simple_strtoul
   simple_write_to_buffer
+  single_open_size
   single_open
   single_release
   sk_alloc

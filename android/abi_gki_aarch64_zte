@@ -1,0 +1,16 @@
+[abi_symbol_list]
+  devm_gpio_free
+  wakeup_source_add
+  wakeup_source_remove
+  mipi_dsi_dcs_write
+  mipi_dsi_dcs_read
+  seq_list_next
+  seq_list_start
+  filp_close
+  filp_open
+  input_mt_sync_frame
+  spi_set_cs_timing
+  devm_gpiod_get
+  device_remove_bin_file
+  devm_snd_soc_register_component
+  snd_pcm_hw_constraint_mask64
