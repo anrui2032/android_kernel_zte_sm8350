@@ -171,4 +171,12 @@ int32_t cam_qup_i2c_write_continuous_table(
 	struct cam_sensor_i2c_reg_setting *write_setting,
 	uint8_t cam_sensor_i2c_write_flag);
 
+int32_t zte_cam_cci_i2c_write(struct camera_io_master *client,
+	uint32_t addr, uint32_t data, enum camera_sensor_i2c_type addr_type,
+	enum camera_sensor_i2c_type data_type);
+
+int32_t cam_cci_i2c_write_table_split(
+	struct camera_io_master *client,
+	struct cam_sensor_i2c_reg_setting *write_setting);
+
 #endif /*_CAM_SENSOR_I2C_H*/

@@ -219,6 +219,11 @@ camera-$(CONFIG_SPECTRA_TFE) += \
 	cam_isp/isp_hw_mgr/isp_hw/tfe_csid_hw/cam_tfe_csid530.o \
 	cam_isp/isp_hw_mgr/cam_tfe_hw_mgr.o
 
+camera-$(CONFIG_SPECTRA_SENSOR) += \
+	cam_sensor_module/zte_io/zte_camera_sensor_util.o \
+	cam_sensor_module/zte_io/zte_camera_ois_util.o \
+	cam_sensor_module/zte_io/ois_bu63169.o \
+	cam_sensor_module/zte_io/ois_lc898128.o
 
 camera-y += camera_main.o
 

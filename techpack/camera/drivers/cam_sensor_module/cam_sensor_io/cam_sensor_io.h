@@ -111,6 +111,9 @@ int32_t camera_io_dev_poll(struct camera_io_master *io_master_info,
 	enum camera_sensor_i2c_type data_type,
 	uint32_t delay_ms);
 
+int32_t camera_io_dev_split_write(struct camera_io_master *io_master_info,
+	struct cam_sensor_i2c_reg_setting *write_setting);
+
 #include "cam_sensor_i2c.h"
 #include "cam_sensor_spi.h"
 #endif /* _CAM_SENSOR_IO_H_ */

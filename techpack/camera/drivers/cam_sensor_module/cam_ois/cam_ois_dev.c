@@ -10,6 +10,8 @@
 #include "cam_debug_util.h"
 #include "camera_main.h"
 
+#include "zte_camera_ois_util.h"
+
 static int cam_ois_subdev_close_internal(struct v4l2_subdev *sd,
 	struct v4l2_subdev_fh *fh)
 {
@@ -305,6 +307,7 @@ static int cam_ois_component_bind(struct device *dev,
 	o_ctrl->soc_info.soc_private = soc_private;
 	soc_private->power_info.dev  = &pdev->dev;
 
+	INIT_LIST_HEAD(&(o_ctrl->i2c_preinit_data.list_head));
 	INIT_LIST_HEAD(&(o_ctrl->i2c_init_data.list_head));
 	INIT_LIST_HEAD(&(o_ctrl->i2c_calib_data.list_head));
 	INIT_LIST_HEAD(&(o_ctrl->i2c_mode_data.list_head));
