@@ -11747,7 +11747,11 @@ static int msm_dai_q6_tdm_prepare(struct snd_pcm_substream *substream,
 			 * if only one port, don't do group enable as there
 			 * is no group need for only one port
 			 */
+#if defined(CONFIG_ZTE_TFA9873_SMART_PA_QUAT)
+			if (dai_data->num_group_ports >= 1) {
+#else
 			if (dai_data->num_group_ports > 1) {
+#endif
 				rc = afe_port_group_enable(group_id,
 					&dai_data->group_cfg, true,
 					&dai_data->lane_cfg);

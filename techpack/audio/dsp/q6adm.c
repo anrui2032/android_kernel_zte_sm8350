@@ -2898,8 +2898,13 @@ static int adm_arrange_mch_map_v8(
 		} else if (channel_mode == 4) {
 			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
 			ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
+#ifdef CONFIG_ZTE_TFA9873_SMART_PA_QUAT
+			ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_FL;
+			ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_FR;
+#else
 			ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_LS;
 			ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_RS;
+#endif
 		} else if (channel_mode == 5) {
 			ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
 			ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
@@ -3053,8 +3058,13 @@ static int adm_arrange_mch_ep2_map_v8(
 	} else if (channel_mode == 4) {
 		ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
 		ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;
+#ifdef CONFIG_ZTE_TFA9873_SMART_PA_QUAT
+		ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_FL;
+		ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_FR;
+#else
 		ep_payload->dev_channel_mapping[2] = PCM_CHANNEL_LS;
 		ep_payload->dev_channel_mapping[3] = PCM_CHANNEL_RS;
+#endif
 	} else if (channel_mode == 5) {
 		ep_payload->dev_channel_mapping[0] = PCM_CHANNEL_FL;
 		ep_payload->dev_channel_mapping[1] = PCM_CHANNEL_FR;

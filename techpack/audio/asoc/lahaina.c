@@ -74,7 +74,7 @@
 #define CODEC_EXT_CLK_RATE          9600000
 #define ADSP_STATE_READY_TIMEOUT_MS 3000
 #define DEV_NAME_STR_LEN            32
-#define WCD_MBHC_HS_V_MAX           1600
+#define WCD_MBHC_HS_V_MAX           1700 /* 1600 */
 
 #define TDM_CHANNEL_MAX		8
 #define TDM_SLOT_OFFSET_MAX 	32
@@ -348,7 +348,11 @@ static struct mi2s_conf mi2s_intf_conf[MI2S_MAX];
 /* Default configuration of TDM channels */
 static struct dev_config tdm_rx_cfg[TDM_INTERFACE_MAX][TDM_PORT_MAX] = {
 	{ /* PRI TDM */
+#if defined(CONFIG_ZTE_TFA9873_SMART_PA_QUAT)
+		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S32_LE, 4}, /* RX_0 */
+#else
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* RX_0 */
+#endif
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* RX_1 */
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* RX_2 */
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* RX_3 */
@@ -411,7 +415,11 @@ static struct dev_config tdm_rx_cfg[TDM_INTERFACE_MAX][TDM_PORT_MAX] = {
 
 static struct dev_config tdm_tx_cfg[TDM_INTERFACE_MAX][TDM_PORT_MAX] = {
 	{ /* PRI TDM */
+#if defined(CONFIG_ZTE_TFA9873_SMART_PA_QUAT)
+		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S32_LE, 4}, /* TX_0 */
+#else
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* TX_0 */
+#endif
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* TX_1 */
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* TX_2 */
 		{SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1}, /* TX_3 */
@@ -512,10 +520,10 @@ static struct dev_config mi2s_tx_cfg[] = {
 
 static struct tdm_dev_config pri_tdm_dev_config[MAX_PATH][TDM_PORT_MAX] = {
 	{ /* PRI TDM */
-		{ {0,   4, 0xFFFF} }, /* RX_0 */
-		{ {8,  12, 0xFFFF} }, /* RX_1 */
-		{ {16, 20, 0xFFFF} }, /* RX_2 */
-		{ {24, 28, 0xFFFF} }, /* RX_3 */
+		{ {0,   4,       8, 12,0xFFFF} }, /* RX_0 */
+		{ {0xFFFF} }, /* RX_1 */
+		{ {0xFFFF} }, /* RX_2 */
+		{ {0xFFFF} }, /* RX_3 */
 		{ {0xFFFF} }, /* RX_4 */
 		{ {0xFFFF} }, /* RX_5 */
 		{ {0xFFFF} }, /* RX_6 */
@@ -523,9 +531,9 @@ static struct tdm_dev_config pri_tdm_dev_config[MAX_PATH][TDM_PORT_MAX] = {
 	},
 	{
 		{ {0,   4,      8, 12, 0xFFFF} }, /* TX_0 */
-		{ {8,  12, 0xFFFF} }, /* TX_1 */
-		{ {16, 20, 0xFFFF} }, /* TX_2 */
-		{ {24, 28, 0xFFFF} }, /* TX_3 */
+		{ {0xFFFF} }, /* TX_1 */
+		{ {0xFFFF} }, /* TX_2 */
+		{ {0xFFFF} }, /* TX_3 */
 		{ {0xFFFF} }, /* TX_4 */
 		{ {0xFFFF} }, /* TX_5 */
 		{ {0xFFFF} }, /* TX_6 */
@@ -746,6 +754,9 @@ static char const *bit_format_text[] = {"S16_LE", "S24_LE", "S24_3LE",
 static char const *cdc80_bit_format_text[] = {"S16_LE", "S24_LE", "S24_3LE"};
 static char const *ch_text[] = {"Two", "Three", "Four", "Five",
 					"Six", "Seven", "Eight"};
+/* ZTE_Qchen: Start */
+static const char *const dmic_sw_text[] = {"Off", "On"}; /* Off-DSPG,On-WCD */
+/* ZTE_Qchen: End */
 static char const *usb_sample_rate_text[] = {"KHZ_8", "KHZ_11P025",
 					"KHZ_16", "KHZ_22P05",
 					"KHZ_32", "KHZ_44P1", "KHZ_48",
@@ -816,6 +827,9 @@ static SOC_ENUM_SINGLE_EXT_DECL(usb_rx_sample_rate, usb_sample_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(usb_tx_sample_rate, usb_sample_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(usb_rx_format, bit_format_text);
 static SOC_ENUM_SINGLE_EXT_DECL(usb_tx_format, bit_format_text);
+/* ZTE_QChen Start */
+static SOC_ENUM_SINGLE_EXT_DECL(dmic_sw_function, dmic_sw_text);
+/* ZTE_QChen End */
 static SOC_ENUM_SINGLE_EXT_DECL(usb_rx_chs, usb_ch_text);
 static SOC_ENUM_SINGLE_EXT_DECL(usb_tx_chs, usb_ch_text);
 static SOC_ENUM_SINGLE_EXT_DECL(vi_feed_tx_chs, vi_feed_ch_text);
@@ -1003,6 +1017,9 @@ static SOC_ENUM_SINGLE_EXT_DECL(afe_loopback_tx_chs, afe_loopback_tx_ch_text);
 static bool is_initial_boot;
 static bool codec_reg_done;
 static struct snd_soc_card snd_soc_card_lahaina_msm;
+/* ZTE_QChen: Start */
+static int dmic_sw_control = 1;
+/* ZTE_QChen: End */
 static int dmic_0_1_gpio_cnt;
 static int dmic_2_3_gpio_cnt;
 static int dmic_4_5_gpio_cnt;
@@ -1024,9 +1041,9 @@ static struct wcd_mbhc_config wcd_mbhc_cfg = {
 	.swap_gnd_mic = NULL,
 	.hs_ext_micbias = true,
 	.key_code[0] = KEY_MEDIA,
-	.key_code[1] = KEY_VOICECOMMAND,
-	.key_code[2] = KEY_VOLUMEUP,
-	.key_code[3] = KEY_VOLUMEDOWN,
+	.key_code[1] = KEY_VOLUMEUP,    /* KEY_VOICECOMMAND */
+	.key_code[2] = KEY_VOLUMEDOWN,  /* KEY_VOLUMEUP */
+	.key_code[3] = 0,               /* KEY_VOLUMEDOWN */
 	.key_code[4] = 0,
 	.key_code[5] = 0,
 	.key_code[6] = 0,
@@ -4391,6 +4408,58 @@ static int msm_bt_sample_rate_tx_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+/* ZTE_QChen: Start */
+static int dmic_sw_control_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	pr_debug("%s: dmic_sw_control = %d\n",
+			 __func__, dmic_sw_control);
+
+	ucontrol->value.enumerated.item[0] = dmic_sw_control;
+
+	return 0;
+}
+
+static int dmic_sw_control_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component = snd_soc_kcontrol_component(kcontrol);
+	struct snd_soc_card *card = component->card;
+	struct msm_asoc_mach_data *pdata =
+				snd_soc_card_get_drvdata(card);
+	int status = ucontrol->value.integer.value[0];
+	int ret;
+
+	 pr_info("%s(): status=%d\n", __func__, status);
+
+	if (pdata->dmic_sw_gpio < 0) {
+		pr_err("%s: rcv_sw_gpio %d is invalid\n",
+			__func__, pdata->dmic_sw_gpio);
+
+		return -EINVAL;
+	}
+
+	 if (status) {
+		ret = gpio_direction_output(pdata->dmic_sw_gpio, 1);
+		if (ret < 0) {
+			pr_err("%s(): dmic_sw_gpio direction failed %d\n",
+				__func__, ret);
+			return ret;
+		}
+	 } else {
+		ret = gpio_direction_output(pdata->dmic_sw_gpio, 0);
+		if (ret < 0) {
+			pr_err("%s(): dmic_sw_gpio direction failed %d\n",
+				__func__, ret);
+			return ret;
+		}
+	 }
+	 dmic_sw_control = status;
+
+	 return 0;
+}
+/* ZTE_QChen: End */
+
 static const struct snd_kcontrol_new msm_int_snd_controls[] = {
 	SOC_ENUM_EXT("WSA_CDC_DMA_RX_0 Channels", wsa_cdc_dma_rx_0_chs,
 			cdc_dma_rx_ch_get, cdc_dma_rx_ch_put),
@@ -4490,6 +4559,10 @@ static const struct snd_kcontrol_new msm_int_snd_controls[] = {
 			va_cdc_dma_tx_2_sample_rate,
 			cdc_dma_tx_sample_rate_get,
 			cdc_dma_tx_sample_rate_put),
+	/* ZTE_QChen: Start */
+	SOC_ENUM_EXT("DMIC Switch", dmic_sw_function, dmic_sw_control_get,
+			dmic_sw_control_put),
+	/* ZTE_QChen: End */
 };
 
 static const struct snd_kcontrol_new msm_int_wcd9370_snd_controls[] = {
@@ -5537,6 +5610,8 @@ static bool msm_usbc_swap_gnd_mic(struct snd_soc_component *component, bool acti
 	struct msm_asoc_mach_data *pdata =
 				snd_soc_card_get_drvdata(card);
 
+	pr_info("%s: active %d\n", __func__, active);
+
 	if (!pdata->fsa_handle)
 		return false;
 
@@ -6233,7 +6308,7 @@ static int msm_mi2s_snd_startup(struct snd_pcm_substream *substream)
 	int sample_rate = 0;
 	u32 bit_per_sample = 0;
 
-	dev_dbg(rtd->card->dev,
+	dev_info(rtd->card->dev,
 		"%s: substream = %s  stream = %d, dai name %s, dai ID %d\n",
 		__func__, substream->name, substream->stream,
 		cpu_dai->name, cpu_dai->id);
@@ -6347,7 +6422,7 @@ static void msm_mi2s_snd_shutdown(struct snd_pcm_substream *substream)
 	struct snd_soc_card *card = rtd->card;
 	struct msm_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
 
-	pr_debug("%s(): substream = %s  stream = %d\n", __func__,
+	pr_info("%s(): substream = %s  stream = %d\n", __func__,
 		 substream->name, substream->stream);
 	if (index < PRIM_MI2S || index >= MI2S_MAX) {
 		pr_err("%s:invalid MI2S DAI(%d)\n", __func__, index);
@@ -6637,14 +6712,14 @@ static void *def_wcd_mbhc_cal(void)
 	btn_high = ((void *)&btn_cfg->_v_btn_low) +
 		(sizeof(btn_cfg->_v_btn_low[0]) * btn_cfg->num_btn);
 
-	btn_high[0] = 75;
-	btn_high[1] = 150;
-	btn_high[2] = 237;
-	btn_high[3] = 500;
-	btn_high[4] = 500;
-	btn_high[5] = 500;
-	btn_high[6] = 500;
-	btn_high[7] = 500;
+	btn_high[0] = 100; /* 75 */
+	btn_high[1] = 200; /* 150 */
+	btn_high[2] = 750; /* 237 */
+	btn_high[3] = 750; /* 500 */
+	btn_high[4] = 750; /* 500 */
+	btn_high[5] = 750; /* 500 */
+	btn_high[6] = 750; /* 500 */
+	btn_high[7] = 750; /* 500 */
 
 	return wcd_mbhc_cal;
 }
@@ -7247,6 +7322,59 @@ static struct snd_soc_dai_link msm_common_misc_fe_dai_links[] = {
 		.id = MSM_FRONTEND_DAI_MULTIMEDIA10,
 		SND_SOC_DAILINK_REG(multimedia10),
 	},
+#if defined(CONFIG_SND_SOC_TFA98XX) 
+#if defined(CONFIG_ZTE_TFA9873_SMART_PA_QUAT)
+	{/* hw: 46 for zte TDM pri */
+		.name = "Primary TDM0_TX Hostless",
+		.stream_name = "Primary TDM0 Hostless Capture",
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			 SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		SND_SOC_DAILINK_REG(pri_tdm_tx_0_hostless),
+	},
+	{/* hw: 47 for zte TDM pri */
+		.name = "Primary TDM0_RX Hostless",
+		.stream_name = "Primary TDM0 Hostless Playback",
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+			 SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		SND_SOC_DAILINK_REG(pri_tdm_rx_0_hostless),
+	},
+#else
+	{/* hw:x,44 */
+		.name = "Primary MI2S_TX Hostless",
+		.stream_name = "Primary MI2S_TX Hostless Capture",
+		.dynamic = 1,
+		.dpcm_capture = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		SND_SOC_DAILINK_REG(pri_mi2s_tx_hostless),
+	},
+	{/* hw:x,45 */
+		.name = "PRI_MI2S Hostless",
+		.stream_name = "PRI_MI2S Hostless",
+		.dynamic = 1,
+		.dpcm_playback = 1,
+		.trigger = {SND_SOC_DPCM_TRIGGER_POST,
+				SND_SOC_DPCM_TRIGGER_POST},
+		.no_host_mode = SND_SOC_DAI_LINK_NO_HOST,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+		SND_SOC_DAILINK_REG(pri_mi2s_rx_hostless),
+	},
+#endif
+#endif
 	{/* hw:x,44 */
 		.name = "Secondary MI2S_TX Hostless",
 		.stream_name = "Secondary MI2S_TX Hostless Capture",
@@ -9506,6 +9634,8 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	uint index = 0;
 	struct clk *lpass_audio_hw_vote = NULL;
 
+	// dev_err(&pdev->dev, "%s: Qch enter msm_asoc_machine_probe 1 \n", __func__);
+
 	if (!pdev->dev.of_node) {
 		dev_err(&pdev->dev, "%s: No platform supplied from device tree\n", __func__);
 		return -EINVAL;
@@ -9525,6 +9655,9 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 				&pdata->wcd_disabled);
 
 	card = populate_snd_card_dailinks(&pdev->dev);
+
+	// dev_err(&pdev->dev, "%s: QCh populate_snd_card_dailinks 3 \n", __func__);
+
 	if (!card) {
 		dev_err(&pdev->dev, "%s: Card uninitialized\n", __func__);
 		ret = -EINVAL;
@@ -9550,6 +9683,9 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 	}
 
 	ret = msm_populate_dai_link_component_of_node(card);
+	dev_err(&pdev->dev, "%s:msm_populate_dai_link_component_of_node Qch 4 ret = :%d\n",
+                     __func__, ret);
+
 	if (ret) {
 		ret = -EPROBE_DEFER;
 		goto err;
@@ -9565,7 +9701,26 @@ static int msm_asoc_machine_probe(struct platform_device *pdev)
 		pdata->wsa_max_devs = 0;
 	}
 
+	/* ZTE_QChen begin */
+	pdata->dmic_sw_gpio = of_get_named_gpio(pdev->dev.of_node,
+						"qcom,dmic-sw-gpio", 0);
+	dev_err(&pdev->dev, "%s: %s = %d\n",__func__, "qcom,dmic-sw-gpio", pdata->dmic_sw_gpio);
+	if (pdata->dmic_sw_gpio < 0) {
+		dev_err(&pdev->dev, "%s: %s property not found %d\n",
+			__func__, "qcom,dmic-sw-gpio", pdata->dmic_sw_gpio);
+	} else {
+		ret = gpio_request(pdata->dmic_sw_gpio, "dmic_sw_gpio");
+		dev_err(&pdev->dev, "QCh %s: ret = %d\n", __func__, ret);
+		gpio_direction_output(pdata->dmic_sw_gpio, 0); /* 0: connect with chipset DSPG */
+		// gpio_free(pdata->dmic_sw_gpio);
+		dmic_sw_control = 0;
+	}
+	/* Zte_Qchen end */
+
 	ret = devm_snd_soc_register_card(&pdev->dev, card);
+	// dev_err(&pdev->dev, "%s:devm_snd_soc_register_card Qch 5 ret = :%d\n",
+	//	__func__, ret);
+
 	if (ret == -EPROBE_DEFER) {
 		if (codec_reg_done)
 			ret = -EINVAL;
