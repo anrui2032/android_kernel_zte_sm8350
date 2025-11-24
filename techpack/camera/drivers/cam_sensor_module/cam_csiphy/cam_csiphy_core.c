@@ -1181,6 +1181,12 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			goto release_mutex;
 		}
 
+		CAM_INFO(CAM_CSIPHY,
+			"STOP_DEV: CSIPHY_IDX: %d, Device_slot: %d, Datarate: %llu, Settletime: %llu",
+			csiphy_dev->soc_info.index, offset,
+			csiphy_dev->csiphy_info[offset].data_rate,
+			csiphy_dev->csiphy_info[offset].settle_time);
+
 		if (--csiphy_dev->start_dev_count) {
 			CAM_DBG(CAM_CSIPHY, "Stop Dev ref Cnt: %d",
 				csiphy_dev->start_dev_count);
@@ -1218,12 +1224,6 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 
 		CAM_DBG(CAM_CSIPHY, "All PHY devices stopped");
 		csiphy_dev->csiphy_state = CAM_CSIPHY_ACQUIRE;
-
-		CAM_INFO(CAM_CSIPHY,
-			"CAM_STOP_PHYDEV: CSIPHY_IDX: %d, Device_slot: %d, Datarate: %llu, Settletime: %llu",
-			csiphy_dev->soc_info.index, offset,
-			csiphy_dev->csiphy_info[offset].data_rate,
-			csiphy_dev->csiphy_info[offset].settle_time);
 	}
 		break;
 	case CAM_RELEASE_DEV: {
@@ -1332,6 +1332,13 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 			CAM_ERR(CAM_CSIPHY, "index is invalid: %d", offset);
 			goto release_mutex;
 		}
+
+		CAM_INFO(CAM_CSIPHY,
+			"CAM_START_PHYDEV: CSIPHY_IDX: %d, Device_slot: %d, cp_mode: %d, Datarate: %llu, Settletime: %llu",
+			csiphy_dev->soc_info.index, offset,
+			csiphy_dev->csiphy_info[offset].secure_mode,
+			csiphy_dev->csiphy_info[offset].data_rate,
+			csiphy_dev->csiphy_info[offset].settle_time);
 
 		if (csiphy_dev->start_dev_count) {
 			clk_vote_level =
@@ -1468,13 +1475,6 @@ int32_t cam_csiphy_core_cfg(void *phy_dev,
 		CAM_DBG(CAM_CSIPHY, "START DEV CNT: %d",
 			csiphy_dev->start_dev_count);
 		csiphy_dev->csiphy_state = CAM_CSIPHY_START;
-
-		CAM_INFO(CAM_CSIPHY,
-			"CAM_START_PHYDEV: CSIPHY_IDX: %d, Device_slot: %d, cp_mode: %d, Datarate: %llu, Settletime: %llu",
-			csiphy_dev->soc_info.index, offset,
-			csiphy_dev->csiphy_info[offset].secure_mode,
-			csiphy_dev->csiphy_info[offset].data_rate,
-			csiphy_dev->csiphy_info[offset].settle_time);
 	}
 		break;
 	case CAM_CONFIG_DEV_EXTERNAL: {
