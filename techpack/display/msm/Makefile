@@ -124,6 +124,13 @@ msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/dsi_phy.o \
 
 msm_drm-$(CONFIG_DSI_PARSER) += dsi/dsi_parser.o
 
+ifeq ($(CONFIG_ZTE_LCD_COMMON_FUNCTION), y)
+msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/zte_lcd_common.o
+ifeq ($(CONFIG_ZTE_LCD_REG_DEBUG), y)
+msm_drm-$(CONFIG_DRM_MSM_DSI) += dsi/zte_lcd_reg_debug.o
+endif
+endif
+
 msm_drm-$(CONFIG_DRM_MSM) += \
 	msm_atomic.o \
 	msm_fb.o \

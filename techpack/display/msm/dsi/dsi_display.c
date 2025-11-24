@@ -21,6 +21,12 @@
 #include "dsi_pwr.h"
 #include "sde_dbg.h"
 #include "dsi_parser.h"
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+#include "zte_lcd_common.h"
+extern struct device *dsi_uevent_device;
+#endif
+/* add by 10244210 */
+#include <linux/notifier.h>
 
 #define to_dsi_display(x) container_of(x, struct dsi_display, host)
 #define INT_BASE_10 10
@@ -36,6 +42,9 @@
 #define MAX_TE_SOURCE_ID  2
 
 #define SEC_PANEL_NAME_MAX_LEN  256
+
+/* add by 10244210 */
+struct blocking_notifier_head ufp_nh;
 
 u8 dbgfs_tx_cmd_buf[SZ_4K];
 static char dsi_display_primary[MAX_CMDLINE_PARAM_LEN];
@@ -1236,11 +1245,31 @@ static void _dsi_display_setup_misr(struct dsi_display *display)
 	}
 }
 
+/* add by 10244210 */
+int ufp_aod_notifier_register(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_register(&ufp_nh, nb);
+}
+EXPORT_SYMBOL_GPL(ufp_aod_notifier_register);
+
+int ufp_aod_notifier_unregister(struct notifier_block *nb)
+{
+	return blocking_notifier_chain_unregister(&ufp_nh, nb);
+}
+EXPORT_SYMBOL_GPL(ufp_aod_notifier_unregister);
+
+static int ufp_aod_notifier_call_chain(unsigned long val)
+{
+	return blocking_notifier_call_chain(&ufp_nh, val, NULL);
+}
+
 int dsi_display_set_power(struct drm_connector *connector,
 		int power_mode, void *disp)
 {
 	struct dsi_display *display = disp;
 	int rc = 0;
+	/* add by 10244210 */
+	static bool panel_enter_low_power = false;
 
 	if (!display || !display->panel) {
 		DSI_ERR("invalid display/panel\n");
@@ -1254,9 +1283,18 @@ int dsi_display_set_power(struct drm_connector *connector,
 				DSI_WARN("failed to set load for lp1 state\n");
 		}
 		rc = dsi_panel_set_lp1(display->panel);
+		pr_info("MSM_LCD Enter LP1\n");
+#ifdef CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+		panel_set_aod_brightness(display->panel,
+				display->panel->zte_lcd_ctrl->lcd_aod_brightness);
+#endif
+		/* add by 10244210 */
+		panel_enter_low_power = true;
+		ufp_aod_notifier_call_chain(1);
 		break;
 	case SDE_MODE_DPMS_LP2:
 		rc = dsi_panel_set_lp2(display->panel);
+		pr_info("MSM_LCD Enter LP2\n");
 		if (dsi_display_set_ulp_load(display, true) < 0)
 			DSI_WARN("failed to set load for lp2 state\n");
 		break;
@@ -1266,11 +1304,29 @@ int dsi_display_set_power(struct drm_connector *connector,
 				DSI_WARN("failed to set load for on state\n");
 		}
 		if ((display->panel->power_mode == SDE_MODE_DPMS_LP1) ||
-			(display->panel->power_mode == SDE_MODE_DPMS_LP2))
+			(display->panel->power_mode == SDE_MODE_DPMS_LP2)) {
 			rc = dsi_panel_set_nolp(display->panel);
+			/* add by 10244210 */
+			if (panel_enter_low_power) {
+				panel_enter_low_power = false;
+				ufp_aod_notifier_call_chain(0);
+			}
+		}
+		pr_info("MSM_LCD ON\n");
 		break;
 	case SDE_MODE_DPMS_OFF:
 	default:
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+			display->panel->zte_lcd_ctrl->zte_panel_state = 0;
+			pr_info("MSM_LCD OFF\n");
+#endif
+			/* add by 10244210 */
+			if (panel_enter_low_power) {
+				panel_enter_low_power = false;
+				ufp_aod_notifier_call_chain(0);
+				pr_info("ufp exit lp1\n");
+			}
+
 		return rc;
 	}
 
@@ -3338,7 +3394,12 @@ static ssize_t dsi_host_transfer(struct mipi_dsi_host *host,
 		if ((msg->flags & MIPI_DSI_MSG_CMD_DMA_SCHED) &&
 				(display->enabled))
 			cmd_flags |= DSI_CTRL_CMD_CUSTOM_DMA_SCHED;
-
+#ifdef CONFIG_ZTE_LCD_REG_DEBUG
+		pr_debug("MSM_LCD dsi_ctrl_cmd_transfer type=%x\n", msg->type);
+		if (msg->type == 0x06) {/*DTYPE_DCS_READ*/
+		    cmd_flags |= DSI_CTRL_CMD_READ;
+		}
+#endif
 		rc = dsi_ctrl_cmd_transfer(display->ctrl[ctrl_idx].ctrl, msg,
 				&cmd_flags);
 		if (rc < 0) {
@@ -4158,6 +4219,9 @@ static int dsi_display_parse_dt(struct dsi_display *display)
 	if (!strcmp(display->display_type, "primary")) {
 		dsi_ctrl_name = "qcom,dsi-ctrl-num";
 		dsi_phy_name = "qcom,dsi-phy-num";
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+		dsi_uevent_device = &display->pdev->dev;
+#endif
 	} else {
 		dsi_ctrl_name = "qcom,dsi-sec-ctrl-num";
 		dsi_phy_name = "qcom,dsi-sec-phy-num";

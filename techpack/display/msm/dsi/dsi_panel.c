@@ -17,6 +17,13 @@
 #include "sde_dbg.h"
 #include "sde_dsc_helper.h"
 #include "sde_vdc_helper.h"
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+#include "zte_lcd_common.h"
+extern struct dsi_panel *g_zte_ctrl_pdata;
+#endif
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+#include <linux/time.h>
+#endif
 
 /**
  * topology is currently defined by a set of following 3 values:
@@ -36,6 +43,23 @@
 #define DEFAULT_PANEL_PREFILL_LINES	25
 #define HIGH_REFRESH_RATE_THRESHOLD_TIME_US	500
 #define MIN_PREFILL_LINES      40
+
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+extern void panel_hbm_send_uevent(int mode, int ret);
+extern void panel_state_send_uevent(int state);
+extern int zte_hbm_ctrl_display_global(struct dsi_panel *panel, u32 setHbm);
+struct timespec start_tv;
+struct timespec end_tv;
+#endif
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+extern void zte_lcd_common_func(struct dsi_panel *panel, struct device_node *node);
+#endif
+#ifdef CONFIG_ZTE_LCD_COLOR_GAMUT_CTRL
+extern int rm692c9_color_gamut_set(struct dsi_panel *panel, u32 index);
+#endif
+#ifdef CONFIG_ZTE_LCD_ACL_CTRL
+extern int zte_lcd_set_acl_level(struct dsi_panel *panel, u32 acl_level);
+#endif
 
 static void dsi_dce_prepare_pps_header(char *buf, u32 pps_delay_ms)
 {
@@ -338,6 +362,9 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 {
 	int rc = 0;
 
+#ifdef CONFIG_ZTE_LCD_GPIO_CTRL_POWER
+	g_zte_ctrl_pdata->zte_lcd_ctrl->gpio_enable_lcd_power(1);
+#endif
 	rc = dsi_pwr_enable_regulator(&panel->power_info, true);
 	if (rc) {
 		DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
@@ -410,6 +437,9 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 	if (rc)
 		DSI_ERR("[%s] failed to enable vregs, rc=%d\n",
 				panel->name, rc);
+#ifdef CONFIG_ZTE_LCD_GPIO_CTRL_POWER
+	g_zte_ctrl_pdata->zte_lcd_ctrl->gpio_enable_lcd_power(0);
+#endif
 
 	return rc;
 }
@@ -433,6 +463,8 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 	count = mode->priv_info->cmd_sets[type].count;
 	state = mode->priv_info->cmd_sets[type].state;
 	SDE_EVT32(type, state, count);
+
+	pr_info("MSM_LCD cmds type=%d,counts =%d\n", type, count);
 
 	if (count == 0) {
 		DSI_DEBUG("[%s] No commands to be sent for state(%d)\n",
@@ -459,11 +491,29 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 		if (cmds->post_wait_ms)
 			usleep_range(cmds->post_wait_ms*1000,
 					((cmds->post_wait_ms*1000)+10));
+		/* if ((type > DSI_CMD_SET_ZTE_COLOR_P3) && type < DSI_CMD_SET_MAX) {
+			pr_info("MSM_LCD cmds[0] = %x,cmds[1]=%x, delay=%d\n", * (char*)(cmds->msg.tx_buf),
+			*(char*)(cmds->msg.tx_buf +1), cmds->post_wait_ms);
+		} */
 		cmds++;
 	}
 error:
 	return rc;
 }
+
+/* add by zte for send lcd dtsi cmds start */
+int zte_dsi_panel_tx_cmd_set(struct dsi_panel *panel,
+				enum dsi_cmd_set_type type){
+	int rc = 0;
+
+	if (!panel || !panel->cur_mode)
+		return -EINVAL;
+
+	rc = dsi_panel_tx_cmd_set(panel,type);
+
+	return rc;
+}
+/* add by zte for send lcd dtsi cmds end */
 
 static int dsi_panel_pinctrl_deinit(struct dsi_panel *panel)
 {
@@ -537,6 +587,92 @@ static int dsi_panel_wled_register(struct dsi_panel *panel,
 	return 0;
 }
 
+/* add by zte for dcs backlight function start */
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+int zte_mipi_dsi_dcs_set_display_brightness(struct mipi_dsi_device *dsi,
+	u16 brightness)
+{
+	ssize_t err;
+	/* u8 payload[2] = { brightness & 0xff, brightness >> 8 }; */
+	u8 payload[2] = { brightness >> 8, brightness & 0xff}; /* change by zte */
+	/* add by zte for lcd backlight dim start */
+	static u16 pre_brightness = 0;
+	static bool bl_dim = false;
+	/* add by zte for lcd backlight dim end */
+
+	if (!dsi || !g_zte_ctrl_pdata) {
+		DSI_ERR("MSM_LCD invalid params\n");
+		return -EINVAL;
+	}
+
+#ifdef CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+	if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_aod_bl_reg51_control) {
+		if (panel_is_in_aod_mode()) {/* zte must not add  brightness != 0 */
+			g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl = brightness;
+			pr_info("MSM_LCD reg51 don't update brightness in AOD mode, bl_level=%d\n",
+				g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl);
+			return 0;
+		}
+	} else {
+		g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl = 0x0;
+		if ((brightness != 0) && panel_is_in_aod_mode()) {
+			g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl = brightness;
+			pr_info("MSM_LCD don't update brightness in AOD mode, bl_level=%d\n",
+				g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl);
+			return 0;
+		}
+	}
+#endif
+
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	if (!g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_hbm_bl_reg53_control) {
+		if (brightness != 0) {
+			g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_keep_bl = brightness;
+			if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_hbm_mode != 0) {
+				pr_info("MSM_LCD don't update brightness when HBM on, bl_level=%d\n",
+				g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_keep_bl);
+				return 0;
+			}
+		}
+		if (brightness == 0) {
+			g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_exit_need_dim = 0;
+		} else if ((brightness != 0) && g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_exit_need_dim) {
+			bl_dim = true;
+			g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_exit_need_dim = 0;
+		}
+	}
+#endif
+
+	err = mipi_dsi_dcs_write(dsi, MIPI_DCS_SET_DISPLAY_BRIGHTNESS,
+				 payload, sizeof(payload));
+	if (err < 0)
+		return err;
+
+	/* add by zte for lcd backlight dim start */
+	if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_dimreg_value != 0x0) {
+		if (brightness == 0)
+			bl_dim = false;
+		if (bl_dim) {
+			pr_info("MSM_LCD send bl_dim true lcd_dimreg_value=%x\n",
+				g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_dimreg_value);
+			bl_dim = false;
+			err = mipi_dsi_dcs_write(dsi, MIPI_DCS_WRITE_CONTROL_DISPLAY,
+				&g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_dimreg_value, 1);
+			if (err < 0)
+				return err;
+		}
+		if (pre_brightness == 0 && brightness != 0) {
+			bl_dim = true;
+		}
+	}
+	pre_brightness = brightness;
+	/* add by zte for lcd backlight dim end */
+
+	return 0;
+}
+#endif
+/* add by zte for dcs backlight function end */
+
 static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
 {
@@ -555,10 +691,14 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 		dsi->mode_flags |= MIPI_DSI_MODE_LPM;
 	}
 
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+	rc = zte_mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
+#else
 	if (panel->bl_config.bl_inverted_dbv)
 		bl_lvl = (((bl_lvl & 0xff) << 8) | (bl_lvl >> 8));
 
 	rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
+#endif
 	if (rc < 0)
 		DSI_ERR("failed to update dcs backlight:%d\n", bl_lvl);
 
@@ -623,9 +763,62 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
+#if defined(CONFIG_ZTE_LCD_BACKLIGHT_LEVEL_CURVE)
+	u32 pre_lvl = 0;
+#endif
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	static int cur_global_hbm_state = 0;
+	static u32 pre_skip_level = 0xff;
+#endif
 
 	if (panel->host_config.ext_bridge_mode)
 		return 0;
+
+#if defined(CONFIG_ZTE_LCD_BACKLIGHT_LEVEL_CURVE)
+	pre_lvl = bl_lvl;
+	if (!g_zte_ctrl_pdata->zte_lcd_ctrl) {
+		pr_info("[MSM_LCD] %s: no llcd backlight curve\n", __func__);
+	} else {
+		bl_lvl = g_zte_ctrl_pdata->zte_lcd_ctrl->zte_convert_brightness(bl_lvl,
+							panel->bl_config.bl_max_level);
+		if ((bl_lvl > panel->bl_config.bl_max_level) && (bl_lvl != 0))
+			bl_lvl = panel->bl_config.bl_max_level;
+
+		if ((bl_lvl < panel->bl_config.bl_min_level) && (bl_lvl != 0))
+			bl_lvl = panel->bl_config.bl_min_level;
+		pr_info("[MSM_LCD] %s: change bl_level from %d to %d!\n", __func__, pre_lvl, bl_lvl);
+	}
+#else
+	if ((bl_lvl > panel->bl_config.bl_max_level) && (bl_lvl != 0))
+		bl_lvl = panel->bl_config.bl_max_level;
+
+	if ((bl_lvl < panel->bl_config.bl_min_level) && (bl_lvl != 0))
+		bl_lvl = panel->bl_config.bl_min_level;
+
+	pr_info("MSM_LCD backlight type:%d bl_level:%d\n", bl->type, bl_lvl);
+#endif
+
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	if (!panel->zte_lcd_ctrl->lcd_hbm_bl_reg53_control) {
+		if (panel->zte_lcd_ctrl->lcd_hdr_on != 0) {
+			if (panel->bl_config.bl_max_level != 0) {
+				bl_lvl = bl_lvl * panel->zte_lcd_ctrl->lcd_hbm_max_bl / panel->bl_config.bl_max_level;
+				if (panel->zte_lcd_ctrl->lcd_hdr_on == 2) {
+					bl_lvl = bl_lvl*8/10; /* zte modify for outdoor brightness */
+				}
+			}
+			if (bl_lvl > panel->zte_lcd_ctrl->lcd_hbm_max_bl)
+				bl_lvl = panel->zte_lcd_ctrl->lcd_hbm_max_bl; /* zte for HDR mode */
+			pr_info("MSM_LCD HDR backlight after convert,lcd_hdr_on=%d bl_level:%d\n",
+				panel->zte_lcd_ctrl->lcd_hdr_on, bl_lvl);
+		}
+		/* zte for fps changer repeat set backlgiht must add after hdr bl_lvel convert */
+		if (pre_skip_level == bl_lvl) {
+			pr_info("MSM_LCD pre_skip_level==bl_lvl=%d skip\n", bl_lvl);
+			return 0;
+		}
+	}
+#endif
 
 	DSI_DEBUG("backlight type:%d lvl:%d\n", bl->type, bl_lvl);
 	switch (bl->type) {
@@ -644,6 +837,22 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 		DSI_ERR("Backlight type(%d) not supported\n", bl->type);
 		rc = -ENOTSUPP;
 	}
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	if (panel->zte_lcd_ctrl->lcd_hbm_bl_reg53_control) {
+		if ((panel->zte_lcd_ctrl->lcd_hdr_on != 0) && (bl_lvl == panel->bl_config.bl_max_level)) {
+			zte_hbm_ctrl_display_global(panel, 1);
+			cur_global_hbm_state = 1;
+			pr_info("MSM_LCD Enable HDR for HBM 53reg\n");
+		} else {
+			if (cur_global_hbm_state == 1) {
+				zte_hbm_ctrl_display_global(panel, 0);
+				cur_global_hbm_state = 0;
+				pr_info("MSM_LCD Disable HDR for HBM 53reg\n");
+			}
+		}
+	}
+	pre_skip_level = bl_lvl;
+#endif
 
 	return rc;
 }
@@ -1757,6 +1966,42 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command",
 	"qcom,mdss-dsi-qsync-on-commands",
 	"qcom,mdss-dsi-qsync-off-commands",
+	/* add by zte for send lcd dtsi cmds start */
+	"zte,mdss-dsi-hbm-on-commands",
+	"zte,mdss-dsi-hbm-off-commands",
+	"zte,mdss-dsi-global-hbm-on-commands",
+	"zte,mdss-dsi-global-hbm-off-commands",
+	"zte,mdss-dsi-aod-low-commands",
+	"zte,mdss-dsi-aod-mid-commands",
+	"zte,mdss-dsi-aod-high-commands",
+	"zte,mdss-dsi-color-original-commands",
+	"zte,mdss-dsi-color-srgb-commands",
+	"zte,mdss-dsi-color-p3-commands",
+
+	"zte,mdss-dsi-60fps-to-60fps-commands",
+	"zte,mdss-dsi-60fps-to-90fps-commands",
+	"zte,mdss-dsi-60fps-to-120fps-commands",
+	"zte,mdss-dsi-60fps-to-144fps-commands",
+	"zte,mdss-dsi-60fps-to-aod-commands",
+
+	"zte,mdss-dsi-90fps-to-60fps-commands",
+	"zte,mdss-dsi-90fps-to-90fps-commands",
+	"zte,mdss-dsi-90fps-to-120fps-commands",
+	"zte,mdss-dsi-90fps-to-144fps-commands",
+	"zte,mdss-dsi-90fps-to-aod-commands",
+
+	"zte,mdss-dsi-120fps-to-60fps-commands",
+	"zte,mdss-dsi-120fps-to-90fps-commands",
+	"zte,mdss-dsi-120fps-to-120fps-commands",
+	"zte,mdss-dsi-120fps-to-144fps-commands",
+	"zte,mdss-dsi-120fps-to-aod-commands",
+
+	"zte,mdss-dsi-144fps-to-60fps-commands",
+	"zte,mdss-dsi-144fps-to-90fps-commands",
+	"zte,mdss-dsi-144fps-to-120fps-commands",
+	"zte,mdss-dsi-144fps-to-144fps-commands",
+	"zte,mdss-dsi-144fps-to-aod-commands",
+	/* add by zte for send lcd dtsi cmds end */
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1783,6 +2028,42 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-post-mode-switch-on-command-state",
 	"qcom,mdss-dsi-qsync-on-commands-state",
 	"qcom,mdss-dsi-qsync-off-commands-state",
+	/* add by zte for send lcd dtsi cmds start */
+	"zte,mdss-dsi-hbm-on-commands-state",
+	"zte,mdss-dsi-hbm-off-commands-state",
+	"zte,mdss-dsi-global-hbm-on-commands-state",
+	"zte,mdss-dsi-global-hbm-off-commands-state",
+	"zte,mdss-dsi-aod-low-commands-state",
+	"zte,mdss-dsi-aod-mid-commands-state",
+	"zte,mdss-dsi-aod-high-commands-state",
+	"zte,mdss-dsi-color-original-commands-state",
+	"zte,mdss-dsi-color-srgb-commands-state",
+	"zte,mdss-dsi-color-p3-commands-state",
+
+	"zte,mdss-dsi-60fps-to-60fps-commands-state",
+	"zte,mdss-dsi-60fps-to-90fps-commands-state",
+	"zte,mdss-dsi-60fps-to-120fps-commands-state",
+	"zte,mdss-dsi-60fps-to-144fps-commands-state",
+	"zte,mdss-dsi-60fps-to-aod-commands-state",
+
+	"zte,mdss-dsi-90fps-to-60fps-commands-state",
+	"zte,mdss-dsi-90fps-to-90fps-commands-state",
+	"zte,mdss-dsi-90fps-to-120fps-commands-state",
+	"zte,mdss-dsi-90fps-to-144fps-commands-state",
+	"zte,mdss-dsi-90fps-to-aod-commands-state",
+
+	"zte,mdss-dsi-120fps-to-60fps-commands-state",
+	"zte,mdss-dsi-120fps-to-90fps-commands-state",
+	"zte,mdss-dsi-120fps-to-120fps-commands-state",
+	"zte,mdss-dsi-120fps-to-144fps-commands-state",
+	"zte,mdss-dsi-120fps-to-aod-commands-state",
+
+	"zte,mdss-dsi-144fps-to-60fps-commands-state",
+	"zte,mdss-dsi-144fps-to-90fps-commands-state",
+	"zte,mdss-dsi-144fps-to-120fps-commands-state",
+	"zte,mdss-dsi-144fps-to-144fps-commands-state",
+	"zte,mdss-dsi-144fps-to-aod-commands-state",
+	/* add by zte for send lcd dtsi cmds end */
 };
 
 int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -3556,6 +3837,12 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	if (rc)
 		DSI_ERR("failed to parse power config, rc=%d\n", rc);
 
+	/* zte add common function for lcd module begin */
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+	zte_lcd_common_func(panel, of_node);
+#endif
+	/* zte add common function for lcd module end */
+
 	rc = dsi_panel_parse_bl_config(panel);
 	if (rc) {
 		DSI_ERR("failed to parse backlight config, rc=%d\n", rc);
@@ -4282,10 +4569,21 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 		panel->power_mode != SDE_MODE_DPMS_LP2)
 		dsi_pwr_panel_regulator_mode_set(&panel->power_info,
 			"ibb", REGULATOR_MODE_IDLE);
-	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
+	if ((!strcmp(panel->name, "Visionox-RM692E1-1080-2400-6P67Inch")) ||
+		(!strcmp(panel->name, "Visionox-RM692E1-HBM51-1080-2400-6P67Inch"))) {
+		rc = dsi_panel_tx_cmd_set(panel, dsi_panel_get_zte_dfps_aod_switch_index());
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+			/* start_tv.tv_sec * 1000000000 + start_tv.tv_nsec */
+			getnstimeofday(&start_tv); 
+#endif
+	} else
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
 	if (rc)
 		DSI_ERR("[%s] failed to send DSI_CMD_SET_LP1 cmd, rc=%d\n",
 		       panel->name, rc);
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+	panel->zte_lcd_ctrl->zte_panel_state = 1;
+#endif
 exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
@@ -4316,6 +4614,9 @@ exit:
 int dsi_panel_set_nolp(struct dsi_panel *panel)
 {
 	int rc = 0;
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	long tv_msec;
+#endif
 
 	if (!panel) {
 		DSI_ERR("invalid params\n");
@@ -4338,10 +4639,53 @@ int dsi_panel_set_nolp(struct dsi_panel *panel)
 	     panel->power_mode == SDE_MODE_DPMS_LP2))
 		dsi_pwr_panel_regulator_mode_set(&panel->power_info,
 			"ibb", REGULATOR_MODE_NORMAL);
+
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	if ((!strcmp(panel->name, "Visionox-RM692E1-1080-2400-6P67Inch")) ||
+		(!strcmp(panel->name, "Visionox-RM692E1-HBM51-1080-2400-6P67Inch"))) {
+		getnstimeofday(&end_tv); /* tv_usec = timestamp.tv_nsec/1000 */
+		tv_msec = (end_tv.tv_sec * 1000 + end_tv.tv_nsec / 1000000)
+				- (start_tv.tv_sec * 1000 + start_tv.tv_nsec / 1000000);
+		if (tv_msec < 50) {
+			pr_info("MSM_LCD lp to nolp time tv_msec = %ld ms e=%ld s=%ld", tv_msec,
+				end_tv.tv_sec * 1000 + end_tv.tv_nsec / 1000000,
+				start_tv.tv_sec * 1000 + start_tv.tv_nsec / 1000000);
+			usleep_range(50*1000, (50*1000+10));
+		}
+	}
+#endif
+
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_NOLP);
 	if (rc)
 		DSI_ERR("[%s] failed to send DSI_CMD_SET_NOLP cmd, rc=%d\n",
 		       panel->name, rc);
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+	panel->zte_lcd_ctrl->zte_panel_state = 0;
+#endif
+#ifdef CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+	if (g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_aod_bl_reg51_control) {
+		if (g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl != 0) {
+			pr_info("MSM_LCD reg51 restore brightness: aod_restore_bl bl_level =%d\n",
+					g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl);
+			dsi_panel_update_backlight(panel, g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl);
+			g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl = 0;
+		} else {
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+			if (g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_keep_bl != 0) {
+			dsi_panel_update_backlight(panel, g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_keep_bl);
+			pr_info("MSM_LCD reg51 restore aod to normal brightness: bl_level=%d\n",
+				g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_keep_bl);
+			}
+#endif
+		}
+	} else {
+		if (g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl != 0) {
+			pr_info("MSM_LCD restore brightness: aod_restore_bl bl_level =%d\n",
+				g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl);
+			dsi_panel_update_backlight(panel, g_zte_ctrl_pdata->zte_lcd_ctrl->aod_restore_bl);
+		}
+	}
+#endif
 exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
@@ -4620,6 +4964,114 @@ int dsi_panel_mode_switch_to_vid(struct dsi_panel *panel)
 	return rc;
 }
 
+/* add for dfps by zte start */
+u32 zte_old_fps = ZTE_60FPS;
+u32 zte_new_fps = ZTE_60FPS;
+enum dsi_cmd_set_type dsi_panel_get_zte_dfps_aod_switch_index(void)
+{
+	enum dsi_cmd_set_type zte_dfps_aod_switch_index = DSI_CMD_SET_ZTE_60FPS_TO_AOD;
+	switch (zte_old_fps) {
+	case ZTE_60FPS:
+		zte_dfps_aod_switch_index = DSI_CMD_SET_ZTE_60FPS_TO_AOD;
+		break;
+	case ZTE_90FPS:
+		zte_dfps_aod_switch_index = DSI_CMD_SET_ZTE_90FPS_TO_AOD;
+		break;
+	case ZTE_120FPS:
+		zte_dfps_aod_switch_index = DSI_CMD_SET_ZTE_120FPS_TO_AOD;
+		break;
+	case ZTE_144FPS:
+		zte_dfps_aod_switch_index = DSI_CMD_SET_ZTE_144FPS_TO_AOD;
+		break;
+	default:
+		DSI_ERR("MSM_LCD ERROR old fps for AOD(%d) not supported\n", zte_old_fps);
+	}
+	pr_info("MSM_LCD ZTE dfps AOD switch index = %d\n", zte_dfps_aod_switch_index);
+	return zte_dfps_aod_switch_index;
+}
+enum dsi_cmd_set_type dsi_panel_get_zte_dfps_switch_index(void)
+{
+	enum dsi_cmd_set_type zte_dfps_switch_index = DSI_CMD_SET_ZTE_60FPS_TO_60FPS;
+	switch (zte_old_fps) {
+	case ZTE_60FPS:
+		switch (zte_new_fps) {
+		case ZTE_60FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_60FPS_TO_60FPS;
+			break;
+		case ZTE_90FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_60FPS_TO_90FPS;
+			break;
+		case ZTE_120FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_60FPS_TO_120FPS;
+			break;
+		case ZTE_144FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_60FPS_TO_144FPS;
+			break;
+		default:
+			DSI_ERR("MSM_LCD ERROR NEW FPS(%d) not supported\n", zte_new_fps);
+		}
+		break;
+	case ZTE_90FPS:
+		switch (zte_new_fps) {
+		case ZTE_60FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_90FPS_TO_60FPS;
+			break;
+		case ZTE_90FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_90FPS_TO_90FPS;
+			break;
+		case ZTE_120FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_90FPS_TO_120FPS;
+			break;
+		case ZTE_144FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_90FPS_TO_144FPS;
+			break;
+		default:
+			DSI_ERR("MSM_LCD ERROR NEW FPS(%d) not supported\n", zte_new_fps);
+		}
+		break;
+	case ZTE_120FPS:
+		switch (zte_new_fps) {
+		case ZTE_60FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_120FPS_TO_60FPS;
+			break;
+		case ZTE_90FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_120FPS_TO_90FPS;
+			break;
+		case ZTE_120FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_120FPS_TO_120FPS;
+			break;
+		case ZTE_144FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_120FPS_TO_144FPS;
+			break;
+		default:
+			DSI_ERR("MSM_LCD ERROR NEW FPS(%d) not supported\n", zte_new_fps);
+		}
+		break;
+	case ZTE_144FPS:
+		switch (zte_new_fps) {
+		case ZTE_60FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_144FPS_TO_60FPS;
+			break;
+		case ZTE_90FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_144FPS_TO_90FPS;
+			break;
+		case ZTE_120FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_144FPS_TO_120FPS;
+			break;
+		case ZTE_144FPS:
+			zte_dfps_switch_index = DSI_CMD_SET_ZTE_144FPS_TO_144FPS;
+			break;
+		default:
+			DSI_ERR("MSM_LCD ERROR NEW FPS(%d) not supported\n", zte_new_fps);
+		}
+		break;
+	default:
+		DSI_ERR("MSM_LCD ERROR OLD FPS(%d) not supported\n", zte_old_fps);
+	}
+	pr_info("MSM_LCD ZTE dfps switch index = %d\n", zte_dfps_switch_index);
+	return zte_dfps_switch_index;
+}
+/* add for dfps by zte end */
 int dsi_panel_switch(struct dsi_panel *panel)
 {
 	int rc = 0;
@@ -4630,12 +5082,22 @@ int dsi_panel_switch(struct dsi_panel *panel)
 	}
 
 	mutex_lock(&panel->panel_lock);
+ 	/* add for dfps by zte start */
+	zte_new_fps = panel->cur_mode->timing.refresh_rate;
+	/* add for dfps by zte end */
 
-	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_TIMING_SWITCH);
+	if ((!strcmp(panel->name, "Visionox-RM692E1-1080-2400-6P67Inch")) ||
+		(!strcmp(panel->name, "Visionox-RM692E1-HBM51-1080-2400-6P67Inch")))
+		rc = dsi_panel_tx_cmd_set(panel, dsi_panel_get_zte_dfps_switch_index());
+	else
+		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_TIMING_SWITCH);
 	if (rc)
 		DSI_ERR("[%s] failed to send DSI_CMD_SET_TIMING_SWITCH cmds, rc=%d\n",
 		       panel->name, rc);
-
+	/* add for dfps by zte start */
+	pr_info("MSM_LCD zte old fps = %d, zte_new_fps = %d\n", zte_old_fps, zte_new_fps);
+	zte_old_fps = zte_new_fps;
+	/* add for dfps by zte end */
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -4678,6 +5140,16 @@ int dsi_panel_enable(struct dsi_panel *panel)
 	else
 		panel->panel_initialized = true;
 	mutex_unlock(&panel->panel_lock);
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+	panel->zte_lcd_ctrl->zte_panel_state = 0;
+#endif
+#ifdef CONFIG_ZTE_LCD_SEC_PANEL_CTRL
+	panel->zte_lcd_ctrl->lcd_sec_panel_state = 1;
+#endif
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	panel_state_send_uevent(1);
+#endif
+	pr_info("MSM_LCD dsi Panel ON\n");
 	return rc;
 }
 
@@ -4689,6 +5161,14 @@ int dsi_panel_post_enable(struct dsi_panel *panel)
 		DSI_ERR("invalid params\n");
 		return -EINVAL;
 	}
+#ifdef CONFIG_ZTE_LCD_COLOR_GAMUT_CTRL
+	if (COLOR_GAMUT_P3 != g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_color_gamut_index)
+		rm692c9_color_gamut_set(g_zte_ctrl_pdata, g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_color_gamut_index);
+#endif
+#ifdef CONFIG_ZTE_LCD_ACL_CTRL
+	if (LCD_ACL_OFF != g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_acl_level)
+		zte_lcd_set_acl_level(g_zte_ctrl_pdata, g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_acl_level);
+#endif
 
 	mutex_lock(&panel->panel_lock);
 
@@ -4768,9 +5248,27 @@ int dsi_panel_disable(struct dsi_panel *panel)
 			rc = 0;
 		}
 	}
+	pr_info("MSM_LCD dsi Panel OFF\n");
 	panel->panel_initialized = false;
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+	panel->zte_lcd_ctrl->zte_panel_state = 5;
+#endif
+#ifdef CONFIG_ZTE_LCD_SEC_PANEL_CTRL
+	panel->zte_lcd_ctrl->lcd_sec_panel_state = 0;
+#endif
+
 	panel->power_mode = SDE_MODE_DPMS_OFF;
 
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+	if (panel->zte_lcd_ctrl->lcd_hbm_mode != 0) {
+		pr_info("MSM_LCD HBM: set hbm mode to 0 when panel off\n");
+		panel->zte_lcd_ctrl->lcd_hbm_mode = 0;
+		panel_hbm_send_uevent(panel->zte_lcd_ctrl->lcd_hbm_mode, 0);
+	}
+	g_zte_ctrl_pdata->zte_lcd_ctrl->lcd_hdr_on = 0;
+
+	panel_state_send_uevent(0);
+#endif
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }

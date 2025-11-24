@@ -28,6 +28,71 @@
 
 #define DSI_CMD_PPS_HDR_SIZE 7
 #define DSI_MODE_MAX 32
+/* add for dfps by zte start */
+#define ZTE_60FPS      60
+#define ZTE_90FPS      90
+#define ZTE_120FPS     120
+#define ZTE_144FPS     144
+#define ZTE_30FPS_AOD  30
+/* add for dfps by zte end */
+/* zte add common function for lcd module begin */
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+struct zte_lcd_ctrl_data {
+		const char *lcd_panel_name;
+		const char *lcd_init_code_version;
+		char lcd_reset_high_sleeping;
+		int lcd_dimreg_value;
+		int lcd_close_dimreg_value;
+		int zte_panel_state;
+#ifdef CONFIG_ZTE_LCD_BACKLIGHT_LEVEL_CURVE
+		u32 lcd_bl_curve_mode;
+		int (*zte_convert_brightness)(int level, u32 bl_max);
+#endif
+#ifdef CONFIG_ZTE_LCD_HBM_CTRL
+		u32 lcd_hbm_mode;
+		u16 hbm_keep_bl;
+		u32 lcd_hbm_max_bl;
+		bool lcd_hbm_bl_reg53_control;
+		bool hbm_exit_need_dim;
+		u32 lcd_hdr_on;
+#endif
+#ifdef CONFIG_ZTE_LCD_SEC_PANEL_CTRL
+		u32 lcd_sec_panel_state;
+#endif
+#ifdef CONFIG_ZTE_LCD_COLOR_GAMUT_CTRL
+		u32 lcd_color_gamut_index;
+#endif
+#ifdef CONFIG_ZTE_LCD_AOD_BRIGHTNESS_CTRL
+		u32 lcd_aod_brightness;
+		u16 aod_restore_bl;
+		bool lcd_aod_bl_reg51_control;
+#endif
+#ifdef CONFIG_ZTE_LCD_ACL_CTRL
+		u32 lcd_acl_level;
+#endif
+#ifdef CONFIG_ZTE_LCD_GPIO_CTRL_POWER
+		int disp_avdd_en_gpio;
+		int disp_iovdd_en_gpio;
+		int disp_vsp_en_gpio;
+		int disp_vsn_en_gpio;
+		int (*gpio_enable_lcd_power)(int enable);
+#endif
+};
+#endif
+/* zte add common function for lcd module end */
+
+#ifdef CONFIG_ZTE_LCD_COLOR_GAMUT_CTRL
+#define COLOR_GAMUT_ORIGINAL    0
+#define COLOR_GAMUT_SRGB        1
+#define COLOR_GAMUT_P3          2
+#endif
+
+#ifdef CONFIG_ZTE_LCD_ACL_CTRL
+#define LCD_ACL_OFF    0
+#define LCD_ACL_LOW    1
+#define LCD_ACL_MID    2
+#define LCD_ACL_HIGH   3
+#endif
 
 /*
  * Defining custom dsi msg flag,
@@ -266,6 +331,11 @@ struct dsi_panel {
 	u32 tlmm_gpio_count;
 
 	struct dsi_panel_ops panel_ops;
+/* zte add common function for lcd module begin */
+#ifdef CONFIG_ZTE_LCD_COMMON_FUNCTION
+	struct zte_lcd_ctrl_data *zte_lcd_ctrl;
+#endif
+/* zte add common function for lcd module end */
 };
 
 static inline bool dsi_panel_ulps_feature_enabled(struct dsi_panel *panel)
@@ -370,6 +440,11 @@ int dsi_panel_mode_switch_to_vid(struct dsi_panel *panel);
 
 int dsi_panel_switch(struct dsi_panel *panel);
 
+/* add for dfps by zte start */
+enum dsi_cmd_set_type dsi_panel_get_zte_dfps_switch_index(void);
+enum dsi_cmd_set_type dsi_panel_get_zte_dfps_aod_switch_index(void);
+/* add for dfps by zte end */
+
 int dsi_panel_post_switch(struct dsi_panel *panel);
 
 void dsi_dsc_pclk_param_calc(struct msm_display_dsc_info *dsc, int intf_width);
@@ -401,4 +476,6 @@ int dsi_panel_create_cmd_packets(const char *data, u32 length, u32 count,
 void dsi_panel_destroy_cmd_packets(struct dsi_panel_cmd_set *set);
 
 void dsi_panel_dealloc_cmd_packets(struct dsi_panel_cmd_set *set);
+
+int zte_dsi_panel_tx_cmd_set(struct dsi_panel *panel, enum dsi_cmd_set_type type); /* add by zte for send lcd dtsi cmds */
 #endif /* _DSI_PANEL_H_ */
