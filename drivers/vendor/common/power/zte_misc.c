@@ -200,7 +200,11 @@ static int battery_module_pack_vendor_get(char *val, const struct kernel_param *
 		return -1;
 	}
 
-	kstrtoint(buf, 10, &resistance);
+	if (kstrtoint(buf, 10, &resistance) != 0) {
+		pr_err("kstrtoint error\n");
+		return -EINVAL;
+	}
+
 	pr_info("resistance_id: %d", resistance);
 
 	resistance = resistance / 1000;
