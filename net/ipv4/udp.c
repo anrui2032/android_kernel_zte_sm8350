@@ -2435,16 +2435,16 @@ int __udp4_lib_rcv(struct sk_buff *skb, struct udp_table *udptable,
 	if (sk)
 		return udp_unicast_rcv_skb(sk, skb, uh);
 
-		/* ZTE_LC_TCP_DEBUG , 20170417 improved */
-		if (tcp_socket_debugfs & TCP_IP_LOG_ENABLE) {
-				pr_log_info("[IP] UDP RCV len=%d "
-				"Gpid:%d (%s), (%pI4:%hu <- %pI4:%hu)\n",
-				ulen,
-				current->group_leader->pid, current->group_leader->comm,
-				&daddr, ntohs(uh->dest),
-				&saddr, ntohs(uh->source));
-		}
-		/* ZTE_LC_TCP_DEBUG end */
+	/* ZTE_LC_TCP_DEBUG , 20170417 improved */
+	if (tcp_socket_debugfs & TCP_IP_LOG_ENABLE) {
+		pr_log_info("[IP] UDP RCV len=%d "
+			"Gpid:%d (%s), (%pI4:%hu <- %pI4:%hu)\n",
+			ulen,
+			current->group_leader->pid, current->group_leader->comm,
+			&daddr, ntohs(uh->dest),
+			&saddr, ntohs(uh->source));
+	}
+	/* ZTE_LC_TCP_DEBUG end */
 
 	if (!xfrm4_policy_check(NULL, XFRM_POLICY_IN, skb))
 		goto drop;
