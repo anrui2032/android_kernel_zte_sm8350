@@ -2035,7 +2035,7 @@ static int goodix_generic_noti_callback(struct notifier_block *self,
 static int goodix_set_edge_suppress_gt9897(int level, int is_hor, void *priv_data)
 {
 	int ret = -1;
-	static in_hor = 1;
+	static int in_hor = 1;
 	struct goodix_ts_core *core_data = priv_data;
 	const struct goodix_ts_hw_ops *hw_ops = core_data->hw_ops;
 
