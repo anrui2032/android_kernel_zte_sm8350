@@ -1,0 +1,75 @@
+&soc {
+	qcom,msm-vendor-imem@146BFE1C {
+		reg = <0x146bfe1c 0x180>;
+		ranges = <0x0 0x146bfe1c 0x180>;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		efs_golden_copy@04 {
+			compatible = "qcom,msm-imem-efs-golden-copy";
+			reg = <0x4 0x8>;
+		};
+
+		pm-count-time@0c {
+			compatible = "qcom,msm-vendor-imem-pm-count-time";
+			reg = <0xc 0x18>;
+		};
+
+		sd_dump_mode@2c {
+			compatible = "qcom,msm-vendor-imem-sd_dump_mode";
+			reg = <0x2c 0x4>;
+		};
+
+		board_id@60 {
+			compatible = "qcom,msm-imem-board-id";
+			reg = <0x60 0x4>;
+		};
+
+		vlog_memory_cookie@64 {
+			compatible = "qcom,msm-vendor-imem-vlog_memory_cookie";
+			reg = <0x64 0x4>;
+		};
+
+		vlog_memory_addr@68 {
+			compatible = "qcom,msm-vendor-imem-vlog_memory_addr";
+			reg = <0x68 0x4>;
+		};
+
+		vlog_memory_size@6c {
+			compatible = "qcom,msm-imem-vlog_memory_size";
+			reg = <0x6c 0x4>;
+		};
+
+		ddr_memory_manufacture@d8 {
+			compatible = "qcom,msm-imem-ddr_memory_manufacture";
+			reg = <0xd8 0x4>;
+		};
+
+		ddr_memory_type@dc {
+			compatible = "qcom,msm-imem-ddr_memory_type";
+			reg = <0xdc 0x4>;
+		};
+
+		ddr_memory_size@e0 {
+			compatible = "qcom,msm-imem-ddr_memory_size";
+			reg = <0xe0 0x4>;
+		};
+
+		s2_reset_type@e4 {
+			compatible = "qcom,msm-imem-s2_reset_type";
+			reg = <0xec 0x4>;
+		};
+	};
+
+	vendor,f3mem {
+		compatible = "vendor,f3mem";
+	};
+
+	zte_pm_debug {
+		compatible = "zte_pm_debug_vendor";
+	};
+
+	dynamic_power_state_notify {
+		compatible = "dynamic_power_state_notify";
+	};
+};

@@ -195,6 +195,13 @@ config ARCH_LAHAINA
 	  LAHAINA chipset. If you do not wish to build a kernel that
 	  runs on this chipset or if you are unsure, say 'N' here.
 
+config ARCH_ZTE_P875A02
+	bool "P875A02 Board"
+	depends on ARCH_LAHAINA
+	help
+	  Support for the ZTE Axon 30 Pro 5G
+	  which is based on QCOM LAHAINA chipset.
+
 config ARCH_QTI_VM
 	bool "Enable Virtual Machines Support for Qualcomm Technologies, Inc."
 	depends on ARCH_QCOM

@@ -160,13 +160,6 @@
 	qcom,dsi-dyn-clk-list = <534712320 532484352 530256384>;
 	qcom,dsi-dyn-clk-type = "constant-fps-adjust-hfp";
 
-	qcom,mdss-dsi-panel-status-check-mode = "reg_read";
-	qcom,mdss-dsi-panel-status-command = [06 01 00 01 00 00 01 0a];
-	qcom,mdss-dsi-panel-status-command-state = "dsi_lp_mode";
-	qcom,mdss-dsi-panel-status-value = <0x9c>;
-	qcom,mdss-dsi-panel-status-read-length = <1>;
-	qcom,esd-check-enabled;
-
 	qcom,dsi-panel-gpio-address = <0x0F100000 0x1000>;
 	qcom,dsi-panel-gpio-pins = <12 24>;
 	qcom,dsi-panel-gpio-names = "reg-gpio", "reset-gpio";
@@ -532,8 +525,8 @@
 
 	qcom,mdss-dsi-display-timings {
 		timing@0 {
-			qcom,mdss-dsi-panel-phy-timings = [00 1c 07 07 17 15 07
-				07 08 02 04 00 18 0c];
+			qcom,mdss-dsi-panel-phy-timings = [00 1d 08 07 17 22 08
+				08 08 02 04 00 19 0c];
 			qcom,display-topology = <2 0 2>,
 						<1 0 2>;
 			qcom,default-topology-index = <0>;

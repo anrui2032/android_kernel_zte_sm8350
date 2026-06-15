@@ -11,7 +11,7 @@
 
 &dsi_sw43404_amoled_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
 	qcom,mdss-dsi-bl-min-level = <1>;
 	qcom,mdss-dsi-bl-max-level = <1023>;
 	qcom,mdss-brightness-max-level = <255>;
@@ -141,9 +141,18 @@
 
 &dsi_dual_nt35597_truly_video {
 	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_avdd>;
-	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_external";
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_pwm";
+	pwms = <&pm8350c_pwm_2 0 0>;
+	qcom,bl-pmic-pwm-period-usecs = <0x64>;
 	qcom,mdss-dsi-bl-min-level = <1>;
-	qcom,mdss-dsi-bl-max-level = <4095>;
+	qcom,mdss-dsi-bl-max-level = <0x3ff>;
+	qcom,mdss-brightness-max-level = <0xff>;
+	zte,disp_vsp_en_gpio = <&tlmm 0x8 0x0>;
+	zte,disp_vsn_en_gpio = <&tlmm 0x9 0x0>;
+	zte,disp_iovdd_en_gpio = <&tlmm 0x1a 0x0>;
+	zte,disp_2dbl_en_gpio = <&tlmm 0x32 0x0>;
+	zte,disp_3dbl_en_gpio = <&tlmm 0x4c 0x0>;
+	zte,disp_3d3_adc_pin = <&tlmm 0x54 0x0>;
 	qcom,platform-reset-gpio = <&tlmm 24 0>;
 };
 

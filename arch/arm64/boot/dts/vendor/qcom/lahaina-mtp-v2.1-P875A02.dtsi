@@ -1,0 +1,497 @@
+#include <dt-bindings/clock/qcom,rpmh.h>
+
+#include "display/dsi-panel-zte-visionox-rm692c9-amoled-fhd-cmd.dtsi"
+#include "display/dsi-panel-zte-visionox-rm692e1-amoled-fhd-cmd.dtsi"
+#include "display/dsi-panel-zte-visionox-rm692e1-hbm51-fhd-cmd.dtsi"
+#include "display/dsi-panel-zte-visionox-rm692e1-hbmotp-fhd-cmd.dtsi"
+#include "display/dsi-panel-zte-visionox-nt37701-amoled-fhd-cmd.dtsi"
+#include "display/dsi-panel-zte-visionox-nt37701-gamut-amoled-fhd-cmd.dtsi"
+#include "display/dsi-panel-zte-leia-ft8203-dual-video.dtsi"
+#include "zte-lahaina-vendor-imem.dtsi"
+
+&lahaina_snd {
+	qcom,wsa-max-devs = <0>;
+	qcom,swr-dmic-max-devs = <0>;
+};
+
+&lahaina_snd {
+	qcom,audio-routing =
+		"AMIC1", "Analog Mic1",
+		"Analog Mic1", "MIC BIAS1",
+		"AMIC2", "Analog Mic2",
+		"Analog Mic2", "MIC BIAS2",
+		"AMIC3", "Analog Mic3",
+		"Analog Mic3", "MIC BIAS3",
+		"AMIC4", "Analog Mic4",
+		"Analog Mic4", "MIC BIAS4",
+		"AMIC5", "Analog Mic5",
+		"Analog Mic5", "MIC BIAS4",
+		"TX DMIC0", "Digital Mic0",
+		"TX DMIC0", "MIC BIAS3",
+		"TX DMIC1", "Digital Mic1",
+		"TX DMIC1", "MIC BIAS3",
+		"TX DMIC2", "Digital Mic2",
+		"TX DMIC2", "MIC BIAS1",
+		"TX DMIC3", "Digital Mic3",
+		"TX DMIC3", "MIC BIAS1",
+		"TX DMIC4", "Digital Mic4",
+		"TX DMIC4", "MIC BIAS4",
+		"TX DMIC5", "Digital Mic5",
+		"TX DMIC5", "MIC BIAS4",
+		"IN1_HPHL", "HPHL_OUT",
+		"IN2_HPHR", "HPHR_OUT",
+		"IN3_AUX", "AUX_OUT",
+		"RX_TX DEC0_INP", "TX DEC0 MUX",
+		"RX_TX DEC1_INP", "TX DEC1 MUX",
+		"RX_TX DEC2_INP", "TX DEC2 MUX",
+		"RX_TX DEC3_INP", "TX DEC3 MUX",
+		"TX SWR_INPUT", "WCD_TX_OUTPUT",
+		"VA SWR_INPUT", "VA_SWR_CLK",
+		"VA SWR_INPUT", "WCD_TX_OUTPUT",
+		"VA_AIF1 CAP", "VA_SWR_CLK",
+		"VA_AIF2 CAP", "VA_SWR_CLK",
+		"VA_AIF3 CAP", "VA_SWR_CLK",
+		"VA DMIC0", "Digital Mic0",
+		"VA DMIC1", "Digital Mic1",
+		"VA DMIC2", "Digital Mic2",
+		"VA DMIC3", "Digital Mic3",
+		"VA DMIC4", "Digital Mic4",
+		"VA DMIC5", "Digital Mic5",
+		"VA DMIC0", "VA MIC BIAS3",
+		"VA DMIC1", "VA MIC BIAS3",
+		"VA DMIC2", "VA MIC BIAS1",
+		"VA DMIC3", "VA MIC BIAS1",
+		"VA DMIC4", "VA MIC BIAS4",
+		"VA DMIC5", "VA MIC BIAS4";
+};
+
+&soc {
+	hall_sensor {
+		compatible = "ah,hall_ic";
+		vddio-supply = <&L8C>;
+		linux,min-uv = <1800000>;
+		linux,max-uv = <1800000>;
+		ah,gpio_irq = <&tlmm 80 0x0>;
+		linux,name = "hall_sensor";
+	};
+};
+
+&qupv3_se4_i2c {
+	status = "ok";
+	goodix-berlin@5d {
+		compatible = "goodix,gt9897";
+		reg = <0x5d>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tp_avdd_enable_default>;
+		avdd-enable-gpio = <&pm8350_gpios 2 0x1>;
+		goodix,iovdd-name = "vdd";
+		vdd-supply = <&L8C>;
+		goodix,reset-gpio = <&tlmm 22 0x0>;
+		goodix,irq-gpio = <&tlmm 23 0x2800>;
+		goodix,irq-flags = <2>;
+		goodix,panel-max-x = <1080>;
+		goodix,panel-max-y = <2400>;
+		goodix,panel-max-w = <255>;
+		panel = <&dsi_visionox_rm692e1_amoled_fhd_cmd
+				 &dsi_visionox_rm692e1_hbm51_fhd_cmd
+				 &dsi_visionox_rm692e1_hbmotp_fhd_cmd>;
+	};
+};
+
+&soc {
+	goodix_fp {
+		status = "ok";
+		compatible = "goodix,fingerprint";
+		spi-max-frequency = <4800000>;
+		qcom,qup-id = <3>;
+		reg = <0x0>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <38 0x2008>;
+		pinctrl-names = "goodix_active", "goodix_suspend", "pwr_active";
+		pinctrl-0 = <&fp_shutdown_active>;
+		pinctrl-1 = <&fp_shutdown_suspend>;
+		pinctrl-2 = <&goodix_pwr_active>;
+		fp-gpio-reset = <&tlmm 39 0x0>;
+		fp-gpio-irq = <&tlmm 38 0x2008>;
+		fp-gpio-id = <&tlmm 37 0x2008>;
+		goodix,gpio_pwr = <&tlmm 45 0x1>;
+		interrupt-names = "goodix_wake_up";
+	};
+};
+
+&soc {
+	fortsense_fp {
+		status = "ok";
+		compatible = "mediatek,mt6755-finger";
+		interrupt-parent = <&tlmm>;
+		interrupts = <0x26 0x1>;
+		debounce = <0x12 0x0>;
+		fortsense,gpio_reset = <&tlmm 0x27 0x2002>;
+		fortsense,gpio_irq = <&tlmm 0x26 0x2002>;
+		fortsense,gpio_pwr = <&tlmm 0x2d 0x0>;
+	};
+};
+
+&tlmm {
+	cam_sensor_rear_wide_suspend: cam_sensor_rear_wide_suspend {
+		mux {
+			pins = "gpio16", "gpio124";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio16", "gpio124";
+			bias-pull-down;
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	cam_sensor_rear_wide_active: cam_sensor_rear_wide_active {
+		mux {
+			pins = "gpio16", "gpio124";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio16", "gpio124";
+			bias-disable;
+			drive-strength = <2>;
+		};
+	};
+
+	cam_sensor_rear_aux_suspend: cam_sensor_rear_aux_suspend {
+		mux {
+			pins = "gpio17", "gpio27";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio17", "gpio27";
+			bias-pull-down;
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	cam_sensor_rear_aux_active: cam_sensor_rear_aux_active {
+		mux {
+			pins = "gpio17", "gpio27";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio17", "gpio27";
+			bias-disable;
+			drive-strength = <2>;
+		};
+	};
+
+	cam_sensor_front_suspend: cam_sensor_front_suspend {
+		mux {
+			pins = "gpio115", "gpio123";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio115", "gpio123";
+			bias-pull-down;
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	cam_sensor_front_active: cam_sensor_front_active {
+		mux {
+			pins = "gpio115", "gpio123";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio115", "gpio123";
+			bias-disable;
+			drive-strength = <2>;
+		};
+	};
+
+	cam_sensor_depth_suspend: cam_sensor_depth_suspend {
+		mux {
+			pins = "gpio117";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio117";
+			bias-pull-down;
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	cam_sensor_depth_active: cam_sensor_depth_active {
+		mux {
+			pins = "gpio117";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio117";
+			bias-disable;
+			drive-strength = <2>;
+		};
+	};
+
+	cam_sensor_rear_macro_suspend: cam_sensor_rear_macro_suspend {
+		mux {
+			pins = "gpio106", "gpio131";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio106", "gpio131";
+			bias-pull-down;
+			drive-strength = <2>;
+			output-low;
+		};
+	};
+
+	cam_sensor_rear_macro_active: cam_sensor_rear_macro_active {
+		mux {
+			pins = "gpio106", "gpio131";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio106", "gpio131";
+			bias-disable;
+			drive-strength = <2>;
+		};
+	};
+};
+
+#include "camera/zte-lahaina-camera-sensor-P875A02.dtsi"
+
+&qupv3_se4_i2c {
+	status = "ok";
+	goodix-gtx8@01 {
+		compatible = "goodix,gt9886";
+		reg = <0x1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&tp_avdd_enable_default>;
+		avdd-enable-gpio = <&pm8350_gpios 2 0x1>;
+		vdd-supply = <&L8C>;
+		goodix,reset-gpio = <&tlmm 22 0x0>;
+		goodix,irq-gpio = <&tlmm 23 0x2800>;
+		goodix,irq-flags = <2>;
+		goodix,panel-max-x = <1080>;
+		goodix,panel-max-y = <2460>;
+		goodix,panel-max-w = <255>;
+		panel = <&dsi_visionox_rm692c9_amoled_fhd_cmd>;
+		goodix,edge-suppress-cmd = <0x50 0x0 0x0 0x0 0x50
+			0x50 0x0 0x1 0x0 0x51
+			0x50 0x0 0x2 0x0 0x52
+			0x50 0x0 0x3 0x0 0x53
+			0x41 0x0 0x0 0x0 0x41
+			0x41 0x0 0x1 0x0 0x42
+			0x41 0x0 0x2 0x0 0x43
+			0x40 0x0 0x2 0x0 0x42
+			0x40 0x0 0x1 0x0 0x41>;
+	};
+};
+
+&qupv3_se15_i2c {
+	status = "ok";
+	st21nfc: st21nfc@8 {
+		compatible = "st,st21nfc";
+		reg = <0x8>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <87 0x0>;
+		reset-gpios = <&tlmm 67 0x0>;
+		irq-gpios = <&tlmm 87 0x0>;
+		clkreq-gpios = <&tlmm 63 0x0>;
+		clocks = <&clock_rpmh RPMH_RF_CLK3>;
+		clock-names = "nfc_ref_clk";
+		st,clk_pinctrl;
+		status = "ok";
+	};
+};
+
+&qupv3_se14_spi {
+	status = "ok";
+	st54spi: st54spi@0 {
+		compatible = "st,st54spi";
+		reg = <0x0>;
+		spi-max-frequency = <1000000>;
+		gpio-power_nreset-std = <&tlmm 66 0x0>;
+		power_mode = "ST54J";
+		pinctrl-names = "secure_element_sleep", "secure_element_active";
+		pinctrl-0 = <&qupv3_se14_spi_sleep>;
+		pinctrl-1 = <&qupv3_se14_spi_active>;
+		status = "ok";
+	};
+};
+
+&qupv3_se17_spi {
+	status = "ok";
+	spi_ssx1207@0 {
+		compatible = "veb,veba5-spi";
+		reg = <0x0>;
+		voltage-ranges = <2950 2950>;
+		spi-max-frequency = <50000000>;
+		veb_spi_vebv3,reset-gpio = <&tlmm 0x54 0x0>;
+		veb_spi_vebv3,status-gpio = <&tlmm 0x53 0x0>;
+		veb_spi_vebv3,wake-gpio = <&tlmm 0x55 0x0>;
+		veb_spi_vebv3,power-en-gpio = <&tlmm 0x5d 0x0>;
+		spi-cpol = <1>;
+		spi-cpha = <1>;
+		pinctrl-names = "wake_rst_sts_poll_up", "wake_poll_down";
+		qcom,use-pinctrl;
+	};
+};
+
+&lahaina_snd {
+	qcom,msm-mbhc-usbc-audio-supported = <1>;
+	qcom,msm-mbhc-hphl-swh = <0>;
+	qcom,msm-mbhc-gnd-swh = <0>;
+	qcom,pri-mi2s-gpios = <&pri_mi2s_gpios>;
+};
+
+&qupv3_se2_i2c {
+	status = "ok";
+	tfa98xx@34 {
+		compatible = "nxp,tfa98xx";
+		reg = <0x34>;
+		reset-gpio = <&tlmm 15 0x0>;
+	};
+};
+
+&dai_mi2s0_rx {
+	compatible = "qcom,msm-dai-q6-mi2s";
+	qcom,msm-dai-q6-mi2s-dev-id = <0>;
+	qcom,msm-mi2s-lines = <2>;
+};
+
+&dai_mi2s0_tx {
+	compatible = "qcom,msm-dai-q6-mi2s";
+	qcom,msm-dai-q6-mi2s-dev-id = <1>;
+	qcom,msm-mi2s-lines = <1>;
+};
+
+&q6core {
+	pri_mi2s_gpios: pri_mi2s_pinctrl {
+		compatible = "qcom,msm-cdc-pinctrl";
+		pinctrl-names = "aud_active", "aud_sleep";
+		pinctrl-0 = <&pri_mi2s_sck_active &pri_mi2s_ws_active &pri_mi2s_sd0_active &pri_mi2s_sd1_active>;
+		pinctrl-1 = <&pri_mi2s_sck_sleep &pri_mi2s_ws_sleep &pri_mi2s_sd0_sleep &pri_mi2s_sd1_sleep>;
+	};
+};
+
+&pm8350c_l13 {
+	regulator-min-microvolt = <2800000>;
+	regulator-max-microvolt = <2800000>;
+	qcom,init-voltage = <2800000>;
+};
+
+&battery_charger {
+	qcom,thermal-mitigation = <8000000 8000000 8000000
+		6000000 5000000 4000000 3000000 2000000
+		1000000 500000 7000000 6000000 5000000
+		4000000 3000000 2000000 1500000 1000000
+		500000 300000>;
+};
+
+&thermal_zones {
+	modem-skin-g5-dl {
+		polling-delay-passive = <0>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&pmk8350_adc_tm 0x144>;
+		wake-capable-sensor;
+
+		trips {
+			g5_dl_trip0: g5-dl-trip0 {
+				temperature = <52000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			g5_dl_trip1: g5-dl-trip1 {
+				temperature = <54000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			skin_modem_lvl0 {
+				trip = <&g5_dl_trip0>;
+				cooling-device = <&modem_skin 1 1>;
+			};
+
+			skin_modem_lvl1 {
+				trip = <&g5_dl_trip1>;
+				cooling-device = <&modem_skin 2 2>;
+			};
+		};
+	};
+
+	modem-pa1-g5-ul {
+		polling-delay-passive = <100>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&qmi_sensor 26>;
+		wake-capable-sensor;
+
+		trips {
+			g5_ul_trip0: g5-ul-trip0 {
+				temperature = <55000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+
+			g5_ul_trip1: g5-ul-trip1 {
+				temperature = <57000>;
+				hysteresis = <2000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			pa_fr1_lvl0 {
+				trip = <&g5_ul_trip0>;
+				cooling-device = <&modem_pa_fr1 1 1>;
+			};
+
+			pa_fr1_lvl1 {
+				trip = <&g5_ul_trip1>;
+				cooling-device = <&modem_pa_fr1 2 2>;
+			};
+		};
+	};
+};
+
+&soc {
+	charger_policy_service {
+		compatible = "zte,charger-policy-service";
+		status = "okay";
+		policy,enable = <1>;
+		policy,retry-times = <10>;
+		policy,expired-mode-enable = <1>;
+		policy,low-temp-enable = <0>;
+		policy,have-power-path = <1>;
+		policy,timeout-seconds = <64800>;
+		policy,expired-max-capacity = <60>;
+		policy,expired-min-capacity = <40>;
+		policy,demo-max-capacity = <60>;
+		policy,demo-min-capacity = <40>;
+		policy,no-powerpath-delta-capacity = <10>;
+		policy,battery-phy-name = "battery";
+		policy,interface-phy-name = "interface";
+		policy,cas-phy-name = "cas";
+	};
+
+	zte_misc_service {
+		compatible = "zte-misc";
+		status = "okay";
+	};
+};
