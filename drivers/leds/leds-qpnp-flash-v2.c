@@ -2107,6 +2107,7 @@ static int qpnp_flash_led_parse_each_led_dt(struct qpnp_flash_led *led,
 	fnode->pdev = led->pdev;
 	fnode->cdev.brightness_set = qpnp_flash_led_brightness_set;
 	fnode->cdev.brightness_get = qpnp_flash_led_brightness_get;
+	fnode->cdev.flags |= LED_KEEP_TRIGGER;
 
 	rc = of_property_read_string(node, "qcom,led-name", &fnode->cdev.name);
 	if (rc < 0) {
