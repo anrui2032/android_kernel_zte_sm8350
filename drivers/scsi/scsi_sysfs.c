@@ -1240,6 +1240,26 @@ static umode_t scsi_sdev_bin_attr_is_visible(struct kobject *kobj,
 	return S_IRUGO;
 }
 
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+static ssize_t device_health_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct scsi_device *sdev = to_scsi_device(dev);
+	struct ufs_health health = {0};
+	int size = 0;
+
+	if (sdev->host->hostt->device_health_descriptor) {
+	    health = sdev->host->hostt->device_health_descriptor(sdev);
+	}
+
+	size = 2 * sizeof("bDeviceLifeTimeEstA:") + 2 * sizeof(health.bDeviceLifeTimeEstA) + 2;
+	return snprintf(buf,  size, "bDeviceLifeTimeEstA:%d\n"
+			       "bDeviceLifeTimeEstB:%d\n",
+			       health.bDeviceLifeTimeEstA,
+			       health.bDeviceLifeTimeEstB);
+}
+static DEVICE_ATTR(health, S_IRUGO, device_health_show, NULL);
+#endif
+
 /* Default template for device attributes.  May NOT be modified */
 static struct attribute *scsi_sdev_attrs[] = {
 	&dev_attr_device_blocked.attr,
@@ -1269,6 +1289,9 @@ static struct attribute *scsi_sdev_attrs[] = {
 	&dev_attr_preferred_path.attr,
 #endif
 	&dev_attr_queue_ramp_up_period.attr,
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+	&dev_attr_health.attr,
+#endif
 	REF_EVT(media_change),
 	REF_EVT(inquiry_change_reported),
 	REF_EVT(capacity_change_reported),
