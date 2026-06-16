@@ -87,3 +87,6 @@ config NFC_QTI_I3C
 	  This enables the NFC driver for SNxxx based devices.
 	  This is for I3C connected version. NCI protocol logic
 	  resides in the usermode and it has no other NFC dependencies.
+
+# Add by zte for nfc chip st54j.
+source "drivers/nfc/st54j/Kconfig"
