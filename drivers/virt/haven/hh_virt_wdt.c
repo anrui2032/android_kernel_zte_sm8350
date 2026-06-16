@@ -135,6 +135,8 @@ static int hh_reset_wdt(struct msm_watchdog_data *wdog_dd)
 			hret, ret);
 	}
 
+	dev_notice(wdog_dd->dev, "just reset hh wdt, hret = %d ret = %d\n",
+		hret, ret);
 	return ret;
 }
 
@@ -172,6 +174,8 @@ static int hh_enable_wdt(u32 state, struct msm_watchdog_data *wdog_dd)
 			hret, ret);
 	}
 
+	dev_notice(wdog_dd->dev, "just enable hh wdt, hret = %d ret = %d\n",
+		hret, ret);
 	return ret;
 }
 
@@ -208,6 +212,8 @@ static int hh_disable_wdt(struct msm_watchdog_data *wdog_dd)
 			hret, ret);
 	}
 
+	dev_notice(wdog_dd->dev, "just disable hh wdt, hret = %d ret = %d\n",
+		hret, ret);
 	return ret;
 }
 
