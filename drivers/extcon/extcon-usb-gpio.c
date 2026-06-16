@@ -81,12 +81,12 @@ static void usb_extcon_detect_cable(struct work_struct *work)
 	if (!vbus)
 		extcon_set_state_sync(info->edev, EXTCON_USB, false);
 
-	if (!id) {
+	if (!id && info->id_gpiod) {
 		if (info->vbus_out_gpiod)
 			gpiod_set_value_cansleep(info->vbus_out_gpiod, 1);
 		extcon_set_state_sync(info->edev, EXTCON_USB_HOST, true);
 	} else {
-		if (vbus)
+		if (vbus && info->vbus_gpiod)
 			extcon_set_state_sync(info->edev, EXTCON_USB, true);
 	}
 }
