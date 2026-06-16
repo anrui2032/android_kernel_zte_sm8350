@@ -58,7 +58,8 @@
 #define _UAPI__LINUX_VIDEODEV2_H
 
 #ifndef __KERNEL__
-#include <sys/time.h>
+/* #include <sys/time.h> */
+#include <linux/time.h>     /* need struct timeval */
 #endif
 #include <linux/compiler.h>
 #include <linux/ioctl.h>

@@ -328,6 +328,25 @@ struct scsi_host_template {
 	 */
 
 	int (*host_reset)(struct Scsi_Host *shost, int reset_type);
+
+#ifdef CONFIG_ZTE_UFS_INFORMATION_FUNCTION
+	/*
+	 * The device_capacity function will return the device capacity
+	 * Get from qTotalRawDeviceCapacity parameter
+	 *
+	 * Status: OPTIONAL
+	 */
+	u64 (*device_capacity)(struct scsi_device *dev);
+
+	/*
+	 * The ufs_health function will return the device health Descriptor
+	 * Get from  bDeviceLifeTimeEstA and  bDeviceLifeTimeEstB parameter
+	 *
+	 * Status: OPTIONAL
+	 */
+	struct ufs_health (*device_health_descriptor)(struct scsi_device *dev);
+#endif
+
 #define SCSI_ADAPTER_RESET	1
 #define SCSI_FIRMWARE_RESET	2
 

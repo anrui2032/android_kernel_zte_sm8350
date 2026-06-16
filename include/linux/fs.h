@@ -2834,6 +2834,11 @@ extern int invalidate_partition(struct gendisk *, int);
 #endif
 unsigned long invalidate_mapping_pages(struct address_space *mapping,
 					pgoff_t start, pgoff_t end);
+#ifdef CONFIG_UID_PAGELIST
+unsigned long invalidate_mapping_pages_without_uidlru(
+					struct address_space *mapping,
+					pgoff_t start, pgoff_t end);
+#endif
 
 static inline void invalidate_remote_inode(struct inode *inode)
 {

@@ -131,6 +131,9 @@ enum pageflags {
 	PG_young,
 	PG_idle,
 #endif
+#ifdef CONFIG_UID_PAGELIST
+	PG_uidlru,
+#endif
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
@@ -318,6 +321,9 @@ PAGEFLAG(Referenced, referenced, PF_HEAD)
 PAGEFLAG(Dirty, dirty, PF_HEAD) TESTSCFLAG(Dirty, dirty, PF_HEAD)
 	__CLEARPAGEFLAG(Dirty, dirty, PF_HEAD)
 PAGEFLAG(LRU, lru, PF_HEAD) __CLEARPAGEFLAG(LRU, lru, PF_HEAD)
+#ifdef CONFIG_UID_PAGELIST
+PAGEFLAG(UIDLRU, uidlru, PF_HEAD) __CLEARPAGEFLAG(UIDLRU, uidlru, PF_HEAD)
+#endif
 PAGEFLAG(Active, active, PF_HEAD) __CLEARPAGEFLAG(Active, active, PF_HEAD)
 	TESTCLEARFLAG(Active, active, PF_HEAD)
 PAGEFLAG(Workingset, workingset, PF_HEAD)

@@ -63,6 +63,9 @@ enum migratetype {
 #endif
 	MIGRATE_PCPTYPES, /* the number of types on the pcp lists */
 	MIGRATE_HIGHATOMIC = MIGRATE_PCPTYPES,
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	MIGRATE_UNMOVABLE_SEC,
+#endif
 #ifdef CONFIG_MEMORY_ISOLATION
 	MIGRATE_ISOLATE,	/* can't allocate from here */
 #endif
@@ -87,6 +90,12 @@ static inline bool is_migrate_movable(int mt)
 	return is_migrate_cma(mt) || mt == MIGRATE_MOVABLE;
 }
 
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+static inline int is_migrate_unmov_sec(int migratetype)
+{
+	return migratetype == MIGRATE_UNMOVABLE_SEC;
+}
+#endif
 #define for_each_migratetype_order(order, type) \
 	for (order = 0; order < MAX_ORDER; order++) \
 		for (type = 0; type < MIGRATE_TYPES; type++)
@@ -103,6 +112,9 @@ extern int page_group_by_mobility_disabled;
 struct free_area {
 	struct list_head	free_list[MIGRATE_TYPES];
 	unsigned long		nr_free;
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	unsigned long		nr_free_unmov_sec;
+#endif
 };
 
 /* Used for pages not on another list */
@@ -111,6 +123,10 @@ static inline void add_to_free_area(struct page *page, struct free_area *area,
 {
 	list_add(&page->lru, &area->free_list[migratetype]);
 	area->nr_free++;
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	if (is_migrate_unmov_sec(migratetype))
+		area->nr_free_unmov_sec++;
+#endif
 }
 
 /* Used for pages not on another list */
@@ -119,6 +135,10 @@ static inline void add_to_free_area_tail(struct page *page, struct free_area *ar
 {
 	list_add_tail(&page->lru, &area->free_list[migratetype]);
 	area->nr_free++;
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	if (is_migrate_unmov_sec(migratetype))
+		area->nr_free_unmov_sec++;
+#endif
 }
 
 #ifdef CONFIG_SHUFFLE_PAGE_ALLOCATOR
@@ -134,11 +154,23 @@ static inline void add_to_free_area_random(struct page *page,
 #endif
 
 /* Used for pages which are on another list */
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+static inline void move_to_free_area(struct page *page, struct free_area *area,
+			     int migratetype, int old_mt)
+{
+	list_move(&page->lru, &area->free_list[migratetype]);
+	if (is_migrate_unmov_sec(migratetype))
+		area->nr_free_unmov_sec++;
+	else if (is_migrate_unmov_sec(old_mt))
+		area->nr_free_unmov_sec--;
+}
+#else
 static inline void move_to_free_area(struct page *page, struct free_area *area,
 			     int migratetype)
 {
 	list_move(&page->lru, &area->free_list[migratetype]);
 }
+#endif
 
 static inline struct page *get_page_from_free_area(struct free_area *area,
 					    int migratetype)
@@ -147,6 +179,18 @@ static inline struct page *get_page_from_free_area(struct free_area *area,
 					struct page, lru);
 }
 
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+static inline void del_page_from_free_area(struct page *page,
+		struct free_area *area, int migratetype)
+{
+	list_del(&page->lru);
+	__ClearPageBuddy(page);
+	set_page_private(page, 0);
+	area->nr_free--;
+	if (is_migrate_unmov_sec(migratetype))
+		area->nr_free_unmov_sec--;
+}
+#else
 static inline void del_page_from_free_area(struct page *page,
 		struct free_area *area)
 {
@@ -155,6 +199,7 @@ static inline void del_page_from_free_area(struct page *page,
 	set_page_private(page, 0);
 	area->nr_free--;
 }
+#endif
 
 static inline bool free_area_empty(struct free_area *area, int migratetype)
 {
@@ -213,7 +258,13 @@ enum zone_stat_item {
 #if IS_ENABLED(CONFIG_ZSMALLOC)
 	NR_ZSPAGES,		/* allocated in zsmalloc */
 #endif
+#ifdef CONFIG_UID_PAGELIST
+	NR_ZONE_UID_PAGES,
+#endif
 	NR_FREE_CMA_PAGES,
+#ifdef CONFIG_BIGGER_ORDER_UNMOV
+	NR_FREE_UNMOV_SEC_POOL,
+#endif
 	NR_VM_ZONE_STAT_ITEMS };
 
 enum node_stat_item {
@@ -306,8 +357,19 @@ struct zone_reclaim_stat {
 	unsigned long		recent_scanned[2];
 };
 
+#ifdef CONFIG_UID_PAGELIST
+struct uid_node {
+	struct uid_node __rcu *next;
+	uid_t uid;
+	struct list_head  page_cache_list;
+	struct rcu_head rcu;
+};
+#endif
 struct lruvec {
 	struct list_head		lists[NR_LRU_LISTS];
+#ifdef CONFIG_UID_PAGELIST
+	struct uid_node **uid_hash;
+#endif
 	struct zone_reclaim_stat	reclaim_stat;
 	/* Evictions & activations on the inactive file list */
 	atomic_long_t			inactive_age;
