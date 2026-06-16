@@ -59,6 +59,7 @@
 #include <net/inet_common.h>
 #include <net/secure_seq.h>
 #include <net/busy_poll.h>
+#include <net/net_log.h> /* ZTE_LC_IP_DEBUG */
 
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -1643,6 +1644,22 @@ process:
 		skb_to_free = sk->sk_rx_skb_cache;
 		sk->sk_rx_skb_cache = NULL;
 		ret = tcp_v6_do_rcv(sk, skb);
+		/* ZTE_LC_TCP_DEBUG, 20170418 improved */
+		if (tcp_socket_debugfs & TCP_IPV6_LOG_ENABLE) {
+				kuid_t uid = sk ? sk->sk_uid : GLOBAL_ROOT_UID;
+
+				if (!uid_valid(uid))
+					uid = GLOBAL_ROOT_UID;
+
+				pr_log_info("[IPv6] TCP RCV len=%d uid=%d, "
+					"Gpid:%d (%s) (%pI6 :%hu <- %pI6 :%hu)\n",
+					ntohs(skb->len),
+					uid.val,
+					current->group_leader->pid, current->group_leader->comm,
+					&hdr->daddr, ntohs(th->dest),
+					&hdr->saddr, ntohs(th->source));
+		}
+		/* ZTE_LC_TCP_DEBUG end */
 	} else {
 		if (tcp_add_backlog(sk, skb))
 			goto discard_and_relse;
