@@ -43,6 +43,7 @@ static inline int qcom_soc_reset_wdt(struct msm_watchdog_data *wdog_dd)
 	__raw_writel(1, wdog_dd->base + WDT0_RST);
 	/* Make sure register write is complete before proceeding */
 	mb();
+	pr_info("just rst qcom wdt\n");
 	return 0;
 }
 
@@ -52,6 +53,7 @@ static inline int qcom_soc_enable_wdt(u32 val,
 	__raw_writel(val, wdog_dd->base + WDT0_EN);
 	/* Make sure register write is complete before proceeding */
 	mb();
+	pr_info("just en qcom wdt\n");
 	return 0;
 }
 
@@ -60,6 +62,7 @@ static inline int qcom_soc_disable_wdt(struct msm_watchdog_data *wdog_dd)
 	__raw_writel(0, wdog_dd->base + WDT0_EN);
 	/* Make sure register write is complete before proceeding */
 	mb();
+	pr_info("just disen qcom wdt\n");
 	return 0;
 }
 

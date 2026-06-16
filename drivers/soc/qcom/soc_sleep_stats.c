@@ -15,6 +15,7 @@
 #include <linux/platform_device.h>
 
 #include <clocksource/arm_arch_timer.h>
+#include <linux/syscore_ops.h>
 
 #ifdef CONFIG_ARM
 #ifndef readq_relaxed
@@ -144,6 +145,107 @@ exit:
 	return length;
 }
 
+/* zte_pm add to show vdd_min and sleep clk ++++ */
+static struct soc_sleep_stats_data *soc_rpm_data = NULL;
+static unsigned long long vmin_count = 0;
+extern void pm_show_rpmh_master_stats(void);
+void pm_show_rpm_stats(void)
+{
+	int i;
+	uint32_t offset;
+	static char buf[1024] = {0};
+	char *temp = NULL;
+	unsigned long long count = 0;
+	ssize_t length = 0, op_length;
+	struct stats_entry data;
+	struct entry *e = &data.entry;
+	struct appended_entry *ae = &data.appended_entry;
+	struct soc_sleep_stats_data *drv = soc_rpm_data;
+	void __iomem *reg = NULL;
+
+	if (!drv) {
+		pr_err("%s: ERROR soc_sleep_stats_data=NULL\n", __func__);
+		return;
+	}
+	reg = drv->reg;
+
+	for (i = 0; i < drv->config->num_records; i++) {
+		offset = offsetof(struct entry, stat_type);
+		e->stat_type = le32_to_cpu(readl_relaxed(reg + offset));
+
+		offset = offsetof(struct entry, count);
+		e->count = le32_to_cpu(readl_relaxed(reg + offset));
+
+		offset = offsetof(struct entry, last_entered_at);
+		e->last_entered_at = le64_to_cpu(readq_relaxed(reg + offset));
+
+		offset = offsetof(struct entry, last_exited_at);
+		e->last_exited_at = le64_to_cpu(readq_relaxed(reg + offset));
+
+		offset = offsetof(struct entry, accumulated);
+		e->accumulated = le64_to_cpu(readq_relaxed(reg + offset));
+
+		e->last_entered_at = get_time_in_sec(e->last_entered_at);
+		e->last_exited_at = get_time_in_sec(e->last_exited_at);
+		e->accumulated = get_time_in_sec(e->accumulated);
+
+		reg += sizeof(struct entry);
+
+		if (drv->config->appended_stats_avail) {
+			offset = offsetof(struct appended_entry, client_votes);
+			ae->client_votes = le32_to_cpu(readl_relaxed(reg +
+								     offset));
+
+			reg += sizeof(struct appended_entry);
+		} else {
+			ae->client_votes = 0;
+		}
+
+		op_length = append_data_to_buf(buf + length, PAGE_SIZE - length,
+					       &data);
+		if (op_length >= PAGE_SIZE - length)
+			return;
+
+		length += op_length;
+	}
+	temp = strnstr(buf, "cxsd\n\tCount                    :", 1024);
+	if (temp == NULL) {
+		pr_err("%s: ERROR could not get cxsd info in msm_rpmstats_private_data\n", __func__);
+		return;
+	}
+	if (sscanf(temp+strlen("cxsd\n\tCount                    :"), "%llu\n", &count) == 1) {
+		if (vmin_count != count) {
+			pr_info("count: last %llu now %llu , enter vdd min success\n", vmin_count, count);
+			vmin_count = count;
+		} else {
+			pr_info("count: last %llu now %llu, enter vdd min failed\n", vmin_count, count);
+			pm_show_rpmh_master_stats();
+		}
+	} else {
+		pr_err("%s: ERROR could not get vdd_min count\n", __func__);
+	}
+
+}
+
+#ifdef CONFIG_PM
+static int gic_ztedebug_suspend(void)
+{
+	return 0;
+}
+
+static void gic_ztedebug_resume(void)
+{
+	pm_show_rpm_stats();
+}
+
+static struct syscore_ops gic_ztedebug_syscore_ops = {
+	.suspend = gic_ztedebug_suspend,
+	.resume = gic_ztedebug_resume,
+};
+
+#endif
+
+/* zte_pm add to show vdd_min and sleep clk ++++ */
 static int soc_sleep_stats_create_sysfs(struct platform_device *pdev,
 					struct soc_sleep_stats_data *drv)
 {
@@ -190,7 +292,9 @@ static int soc_sleep_stats_probe(struct platform_device *pdev)
 	void __iomem *offset_addr;
 	uint32_t offset = 0;
 	int ret;
-
+#ifdef CONFIG_PM
+	register_syscore_ops(&gic_ztedebug_syscore_ops);
+#endif
 	drv = devm_kzalloc(&pdev->dev, sizeof(*drv), GFP_KERNEL);
 	if (!drv)
 		return -ENOMEM;
@@ -229,6 +333,7 @@ static int soc_sleep_stats_probe(struct platform_device *pdev)
 	}
 
 	platform_set_drvdata(pdev, drv);
+	soc_rpm_data = drv;
 	return 0;
 }
 

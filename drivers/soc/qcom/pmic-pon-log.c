@@ -436,6 +436,9 @@ static int pmic_pon_log_parse_entry(const struct pmic_pon_log_entry *entry,
 	else
 		pr_debug("PMIC PON log: %s\n", buf);
 
+	if ( entry->event == PMIC_PON_EVENT_PON_SUCCESS	)
+                pr_info("PMIC PON log: ==== new pon group ==== \n");
+
 	if (entry->state < ARRAY_SIZE(pmic_pon_state_label))
 		ipc_log_string(ipc_log, "State=%s; %s\n",
 				pmic_pon_state_label[entry->state], buf);

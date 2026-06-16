@@ -370,6 +370,7 @@ int qcom_wdt_pet_suspend(struct device *dev)
 	spin_lock(&wdog_dd->freeze_lock);
 	wdog_dd->freeze_in_progress = true;
 	spin_unlock(&wdog_dd->freeze_lock);
+	pr_info("pet suspend\n");
 	del_timer_sync(&wdog_dd->pet_timer);
 	if (wdog_dd->user_pet_enabled)
 		del_timer_sync(&wdog_dd->user_pet_timer);
@@ -389,6 +390,7 @@ int qcom_wdt_pet_resume(struct device *dev)
 	delay_time = msecs_to_jiffies(wdog_dd->pet_time);
 	wdog_dd->ops->reset_wdt(wdog_dd);
 	wdog_dd->last_pet = sched_clock();
+	pr_info("pet resumed\n");
 	spin_lock(&wdog_dd->freeze_lock);
 	wdog_dd->pet_timer.expires = jiffies + delay_time;
 	add_timer(&wdog_dd->pet_timer);
