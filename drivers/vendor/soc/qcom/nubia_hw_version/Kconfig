@@ -1,0 +1,6 @@
+
+config NUBIA_HW_VERSION
+	bool "NUBIA HW VERSION INFO"
+	default n
+	help
+	  Say 'y' here to include support for nubia hw version info.

@@ -1,0 +1,13 @@
+#
+# goodix gt1x Touchscreen driver configuration
+#
+
+config TOUCHSCREEN_GT1X_DRIVER
+	bool "goodix gt1x touchscreen"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you have a goodix gt1x touchscreen connected.
+
+	  If unsure, say N.
+

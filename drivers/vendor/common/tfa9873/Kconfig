@@ -1,0 +1,14 @@
+config SND_SOC_TFA98XX
+	bool "Support Goodix smartpa driver"
+
+config SND_SOC_TFA98XX_SINGLE
+	bool "Support Goodix smartpa driver"
+
+config SND_SOC_TFA98XX_SINGLE_35
+	bool "Support Goodix smartpa driver"
+
+config SND_SOC_TFA98XX_TDM
+	bool "Support Goodix samrtpa used TDM interface"
+
+config ZTE_TFA9873_SMART_PA_QUAT
+	bool "Support Goodix smartpa driver"

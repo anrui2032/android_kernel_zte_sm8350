@@ -1,0 +1,11 @@
+#
+# Touchscreen driver configuration
+#
+config TOUCHSCREEN_HYNITRON
+	bool "Hynitron Ts for SPRD"
+	depends on I2C
+	default n
+	help
+	  Say Y here if you have Hynitron touch panel.
+	  If unsure, say N.
+

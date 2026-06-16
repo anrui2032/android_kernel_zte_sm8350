@@ -1,0 +1,17 @@
+config VENDOR_SOC_QCOM_SRC
+	bool "drivers/vendor/soc/qcom drivers compile control"
+	default n
+	help
+		This enables drivers/vendor/soc/qcom drivers to be compiled.
+
+source "drivers/vendor/soc/qcom/vlog/Kconfig"
+source "drivers/vendor/soc/qcom/logcat/Kconfig"
+source "drivers/vendor/soc/qcom/sdlog/Kconfig"
+source "drivers/vendor/soc/qcom/pmlog/Kconfig"
+source "drivers/vendor/soc/qcom/klog/Kconfig"
+source "drivers/vendor/soc/qcom/imem_info/Kconfig"
+source "drivers/vendor/soc/qcom/vcfg/Kconfig"
+source "drivers/vendor/soc/qcom/dpn/Kconfig"
+source "drivers/vendor/soc/qcom/subsys_restart/Kconfig"
+source "drivers/vendor/soc/qcom/debugpolicy/Kconfig"
+source "drivers/vendor/soc/qcom/nubia_hw_version/Kconfig"
