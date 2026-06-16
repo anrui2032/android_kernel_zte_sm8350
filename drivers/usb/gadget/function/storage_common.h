@@ -95,6 +95,10 @@ do {									\
  */
 #define INQUIRY_STRING_LEN ((size_t) (8 + 16 + 4 + 1))
 
+/* OEM for SCSI Command sent by OS X */
+#define SC_GET_CONFIGRATION      0x46
+#define SC_SET_CD_SPEED          0xbb
+
 struct fsg_lun {
 	struct file	*filp;
 	loff_t		file_length;

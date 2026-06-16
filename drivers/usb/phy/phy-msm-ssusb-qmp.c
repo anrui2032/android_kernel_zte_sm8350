@@ -77,6 +77,37 @@ enum core_ldo_levels {
 
 /* USB3_DP_COM_TYPEC_STATUS */
 #define PORTSELECT_RAW		BIT(0)
+/* USB3 Gen2 link training indicator */
+#define RX_EQUALIZATION_IN_PROGRESS	BIT(3)
+
+#define USB3_QSERDES_TXA_PRE_EMPH 0x12E8
+#define USB3_QSERDES_TXB_PRE_EMPH 0x16E8
+#define DP_QSERDES_TX0_PRE_EMPH 0x22E8
+#define DP_QSERDES_TX1_PRE_EMPH 0x26E8
+#define USB3_QSERDES_TXA_TX_EMP_POST1_LVL 0x120C
+#define USB3_QSERDES_TXB_TX_EMP_POST1_LVL 0x160C
+#define USB3_QSERDES_TXA_LANE_MODE_2 0x1288
+#define USB3_QSERDES_TXB_LANE_MODE_2 0x1688
+#define USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL2 0x14EC
+#define USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL2 0x18EC
+#define USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL3 0x14F0
+#define USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL3 0x18F0
+#define USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL4 0x14F4
+#define USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL4 0x18F4
+
+/* for 6350 */
+#define USB3_QSERDES_TXA_TXA_TX_DRV_LVL_6350 0x1220
+#define USB3_QSERDES_TXA_TXB_TX_DRV_LVL_6350 0x1620
+#define USB3_QSERDES_TXA_TX_EMP_POST1_LVL_6350 0x120C
+#define USB3_QSERDES_TXB_TX_EMP_POST1_LVL_6350 0x160C
+#define USB3_QSERDES_TXA_LANE_MODE_2 0x1288
+#define USB3_QSERDES_TXB_LANE_MODE_2 0x1688
+#define USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL2_6350 0x14D4
+#define USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL2_6350 0x18D4
+#define USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL3_6350 0x14D8
+#define USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL3_6350 0x18D8
+#define USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL4_6350 0x14DC
+#define USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL4_6350 0x18DC
 
 enum qmp_phy_rev_reg {
 	USB3_PHY_PCS_STATUS,
@@ -147,6 +178,8 @@ struct msm_ssphy_qmp {
 	u32			*qmp_phy_init_seq;
 	int			init_seq_len;
 	enum qmp_phy_type	phy_type;
+	u32			*oem_qmp_phy_init_seq;
+	int			oem_init_seq_len;
 };
 
 static const struct of_device_id msm_usb_id_table[] = {
@@ -476,6 +509,164 @@ static void usb_qmp_powerup_phy(struct msm_ssphy_qmp *phy)
 	mb();
 }
 
+/* for usb eye diagram test */
+static struct msm_ssphy_qmp *the_ssusb_phy = NULL;
+static int param_override_testing;
+#define PARAM_OVERRIDE_SIZE (2*14+1)
+static int param_override[PARAM_OVERRIDE_SIZE] = {
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1, -1,
+	-1,
+};
+
+static void param_override_init(struct msm_ssphy_qmp *phy)
+{
+	/* struct msm_otg_platform_data *pdata = motg->pdata; */
+	/* seq = pdata->phy_init_seq_override if need */
+	int *seq = NULL;
+	int i = 0;
+
+	if (param_override_testing) {
+		seq = param_override;
+		/* phy->pdata->phy_init_seq = param_override; */
+	}
+
+	if (!seq) {
+		dev_err(phy->phy.dev, "usb30 %s param_override_init is null, skip\n", __func__);
+		return;
+	}
+
+	while (seq[0] >= 0) {
+		dev_info(phy->phy.dev, "usb30 param_override_init: write add:0x%02x to val:0x%02x\n",
+				phy->base + seq[0], seq[1]);
+		writel_relaxed(seq[1], phy->base + seq[0]);
+		seq += 2;
+		i += 2;
+		if (i >= PARAM_OVERRIDE_SIZE - 1)
+			break;
+	}
+
+}
+
+static int diagram_param_write(const char *val, const struct kernel_param *kp)
+{
+	int err, size, i = 0;
+	char buf[256] = {0};
+	char *b;
+	char *value;
+	unsigned long tmp;
+	struct msm_ssphy_qmp *phy = the_ssusb_phy;
+
+	dev_info(phy->phy.dev, "usb30 diagram_param_write val = %s\n", val);
+
+	size = sizeof(param_override)-1;
+	strlcpy(buf, val, sizeof(buf));
+	b = strim(buf);
+	while (b) {
+		value = strsep(&b, ",");
+		if (value) {
+			err = kstrtoul(value, 16, &tmp);
+			if (err) {
+				dev_err(phy->phy.dev, "%s kstrtoul failed\n", __func__);
+				param_override_testing = 0;
+				goto out;
+			}
+			if (i < size) {
+				dev_info(phy->phy.dev, "set the val = %d to param_overide\n", tmp);
+				param_override[i] = (int)tmp;
+			}
+			i++;
+			if (!param_override_testing)
+				param_override_testing = 1;
+		}
+	}
+
+	param_override_init(phy);
+
+out:
+	return strlen(val);
+}
+#define USB_TUNING_REG_SIZE 14
+static int diagram_param_read(char *buf, const struct kernel_param *kp)
+{
+	int i = 0;
+	u32 reg[USB_TUNING_REG_SIZE] = {0x12e8, 0x16e8, 0x22e8, 0x26e8, 0x120c, 0x160c,
+		0x1288, 0x1688, 0x14ec, 0x18ec, 0x14f0, 0x18f0, 0x14f4, 0x18f4};
+	char *name[USB_TUNING_REG_SIZE] = {
+		"USB3_QSERDES_TXA_PRE_EMPH",
+		"USB3_QSERDES_TXB_PRE_EMPH",
+		"DP_QSERDES_TX0_PRE_EMPH",
+		"DP_QSERDES_TX1_PRE_EMPH",
+		"USB3_QSERDES_TXA_TX_EMP_POST1_LVL",
+		"USB3_QSERDES_TXB_TX_EMP_POST1_LVL",
+		"USB3_QSERDES_TXA_LANE_MODE_2",
+		"USB3_QSERDES_TXB_LANE_MODE_2",
+		"USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL2",
+		"USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL2",
+		"USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL3",
+		"USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL3",
+		"USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL4",
+		"USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL4"};
+	char *buff = buf;
+	struct msm_ssphy_qmp *phy = the_ssusb_phy;
+
+	for (i = 0; i < USB_TUNING_REG_SIZE; i++) {
+		buff += scnprintf(buff, PAGE_SIZE,
+			"%-40s REG[0x%x]=0x%x\n", name[i], phy->base+reg[i], readl_relaxed(phy->base + reg[i]));
+	}
+	if (buff != buf)
+		*(buff-1) = '\n';
+	return buff - buf;
+
+}
+#define USB_TUNING_REG_SIZE_6350 10
+static int diagram_param_read_6350(char *buf, const struct kernel_param *kp)
+{
+	int i = 0;
+	u32 reg[USB_TUNING_REG_SIZE_6350] = {0x1220, 0x1620, 0x120C, 0x160C, 0x14D4, 0x18D4,
+		0x14D8, 0x18D8, 0x14DC, 0x18DC};
+	char *name[USB_TUNING_REG_SIZE_6350] = {
+		"USB3_QSERDES_TXA_TXA_TX_DRV_LVL_6350",
+		"USB3_QSERDES_TXA_TXB_TX_DRV_LVL_6350",
+		"USB3_QSERDES_TXA_TX_EMP_POST1_LVL_6350",
+		"USB3_QSERDES_TXB_TX_EMP_POST1_LVL_6350",
+		"USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL2_6350",
+		"USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL2_6350",
+		"USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL3_6350",
+		"USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL3_6350",
+		"USB3_QSERDES_RXA_RX_EQU_ADAPTOR_CNTRL4_6350",
+		"USB3_QSERDES_RXB_RX_EQU_ADAPTOR_CNTRL4_6350"};
+	char *buff = buf;
+	struct msm_ssphy_qmp *phy = the_ssusb_phy;
+
+	for (i = 0; i < USB_TUNING_REG_SIZE_6350; i++) {
+		buff += scnprintf(buff, PAGE_SIZE,
+			"%-40s REG[0x%x]=0x%x\n", name[i], phy->base+reg[i], readl_relaxed(phy->base + reg[i]));
+	}
+	if (buff != buf)
+		*(buff-1) = '\n';
+	return buff - buf;
+
+}
+
+module_param_call(usb_30_diagram_param, diagram_param_write, diagram_param_read,
+		  NULL, 0664);
+module_param_call(usb_30_diagram_param_6350, diagram_param_write, diagram_param_read_6350,
+		  NULL, 0664);
+MODULE_PARM_DESC(usb_30_diagram_param, "USB3.0 eye diagram_param");
+MODULE_PARM_DESC(usb_30_diagram_param_6350, "6350 USB3.0 eye diagram_param");
 /* SSPHY Initialization */
 static int msm_ssphy_qmp_init(struct usb_phy *uphy)
 {
@@ -516,6 +707,20 @@ static int msm_ssphy_qmp_init(struct usb_phy *uphy)
 		dev_err(uphy->dev, "Failed the main PHY configuration\n");
 		goto fail;
 	}
+
+	/* Configuration override by oem */
+	if (phy->oem_qmp_phy_init_seq && phy->oem_init_seq_len > 0) {
+		reg = (struct qmp_reg_val *)phy->oem_qmp_phy_init_seq;
+		ret = configure_phy_regs(uphy, reg);
+		if (ret) {
+			dev_warn(uphy->dev, "Failed the main PHY oem configuration override\n");
+		} else {
+			dev_info(uphy->dev, "Succeed the main PHY oem configuration override\n");
+		}
+	}
+
+	/* For online tuning */
+	param_override_init(phy);
 
 	/* perform software reset of PHY common logic */
 	if (phy->phy_type == USB3_AND_DP &&
@@ -1039,6 +1244,25 @@ static int msm_ssphy_qmp_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+	size = 0;
+	of_get_property(dev->of_node, "oem,qmp-phy-init-seq", &size);
+	if (size) {
+		if (size % sizeof(*phy->oem_qmp_phy_init_seq)) {
+			dev_warn(dev, "invalid init_seq_len for oem_qmp_phy_init_seq\n");
+		} else {
+			phy->oem_qmp_phy_init_seq = devm_kzalloc(dev, size, GFP_KERNEL);
+			if (!phy->oem_qmp_phy_init_seq) {
+				dev_warn(dev, "fail to alloc memory for oem_qmp_phy_init_seq\n");
+			} else {
+				phy->oem_init_seq_len = (size / sizeof(*phy->oem_qmp_phy_init_seq));
+				of_property_read_u32_array(dev->of_node,
+					"oem,qmp-phy-init-seq",
+					phy->oem_qmp_phy_init_seq,
+					phy->oem_init_seq_len);
+				dev_info(dev, "get oem_qmp_phy_init_seq\n");
+			}
+		}
+	}
 	/* Set default core voltage values */
 	phy->core_voltage_levels[CORE_LEVEL_NONE] = 0;
 	phy->core_voltage_levels[CORE_LEVEL_MIN] = USB_SSPHY_1P2_VOL_MIN;
@@ -1103,6 +1327,9 @@ static int msm_ssphy_qmp_probe(struct platform_device *pdev)
 	phy->phy.notify_disconnect	= msm_ssphy_qmp_notify_disconnect;
 
 	ret = usb_add_phy_dev(&phy->phy);
+
+	if (the_ssusb_phy == NULL)
+		the_ssusb_phy = phy;
 
 err:
 	return ret;
