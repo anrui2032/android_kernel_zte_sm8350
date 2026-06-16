@@ -20,13 +20,21 @@
 #include <linux/power_supply.h>
 #include <linux/soc/qcom/pmic_glink.h>
 #include <linux/soc/qcom/battery_charger.h>
+#include <linux/sched.h>
+#include <linux/ktime.h>
+#include <soc/qcom/socinfo.h>
 #include "qti_typec_class.h"
+#if IS_ENABLED(CONFIG_VENDOR_ZTE_MISC)
+#include <vendor/common/zte_misc.h>
+#endif
 
 #define MSG_OWNER_BC			32778
+#define MSG_OWNER_OEM			32782
 #define MSG_TYPE_REQ_RESP		1
 #define MSG_TYPE_NOTIFY			2
 
 /* opcode for battery charger */
+#define BC_RESISTANCE_ID_REQ    0x00
 #define BC_SET_NOTIFY_REQ		0x04
 #define BC_NOTIFY_IND			0x07
 #define BC_BATTERY_STATUS_GET		0x30
@@ -43,6 +51,11 @@
 #define BC_WLS_FW_GET_VERSION		0x44
 #define BC_SHUTDOWN_NOTIFY		0x47
 #define BC_GENERIC_NOTIFY		0x80
+#define BC_ADSP_DEBUG			0x100
+
+// OEM specific opcodes
+#define OEM_OPCODE_READ_BUFFER               0x10000
+#define OEM_OPCODE_WRITE_BUFFER              0x10001
 
 /* Generic definitions */
 #define MAX_STR_LEN			128
@@ -52,6 +65,15 @@
 #define WLS_FW_UPDATE_TIME_MS		1000
 #define WLS_FW_BUF_SIZE			128
 #define DEFAULT_RESTRICT_FCC_UA		1000000
+
+#ifdef ZTE_CHARGER_EXT_BATTERY
+#define UPDATE_SOC_WORK_TIME_MS		10000
+#endif
+
+
+#ifdef CONFIG_ZTE_BOOT_MODE
+extern int socinfo_get_charger_flag(void);
+#endif
 
 enum usb_connector_type {
 	USB_CONNECTOR_TYPE_TYPEC,
@@ -96,6 +118,9 @@ enum battery_property_id {
 	BATT_RESISTANCE,
 	BATT_POWER_NOW,
 	BATT_POWER_AVG,
+	BATT_FCC_USER,
+	BATT_TYPEC_CC_ORIENTATION,
+	BATT_RECHARGE_SOC,
 	BATT_PROP_MAX,
 };
 
@@ -115,6 +140,9 @@ enum usb_property_id {
 	USB_TYPEC_COMPLIANT,
 	USB_SCOPE,
 	USB_CONNECTOR_TYPE,
+	USB_OEM_CHARGER_TYPE,
+	USB_SUSPEND,
+	USB_PRESENT,
 	USB_PROP_MAX,
 };
 
@@ -135,12 +163,27 @@ enum {
 	QTI_POWER_SUPPLY_USB_TYPE_HVDCP_3P5,
 };
 
+enum {
+	OEM_BATTERY_TYPE_NORMAL = 0,
+	OEM_BATTERY_TYPE_LOW,
+};
+
 struct battery_charger_set_notify_msg {
 	struct pmic_glink_hdr	hdr;
 	u32			battery_id;
 	u32			power_state;
 	u32			low_capacity;
 	u32			high_capacity;
+};
+
+struct battery_charger_get_resistance_id_msg {
+	struct pmic_glink_hdr	hdr;
+	u32			battery_id;
+};
+
+struct battery_charger_adsp_debug_msg {
+	struct pmic_glink_hdr	hdr;
+	u32			adsp_debug;
 };
 
 struct battery_charger_notify_msg {
@@ -220,6 +263,19 @@ struct psy_state {
 	u32			opcode_set;
 };
 
+enum bcdev_id_state {
+	BCDEV_ID_GROUND = 0,
+	BCDEV_ID_FLOAT,
+};
+
+struct extcon_nb {
+	struct extcon_dev	*edev;
+	struct battery_chg_dev	*bcdev;
+	int			idx;
+	struct notifier_block	vbus_nb;
+	struct notifier_block	id_nb;
+};
+
 struct battery_chg_dev {
 	struct device			*dev;
 	struct class			battery_class;
@@ -233,6 +289,10 @@ struct battery_chg_dev {
 	struct dentry			*debugfs_dir;
 	/* extcon for VBUS/ID notification for USB for micro USB */
 	struct extcon_dev		*extcon;
+	/* extcon notifier for USB1 */
+	struct extcon_nb		*extcon_nb;
+	enum bcdev_id_state		id_state;
+	struct work_struct		extcon_notify_work;
 	u32				*thermal_levels;
 	const char			*wls_fw_name;
 	int				curr_thermal_level;
@@ -240,9 +300,31 @@ struct battery_chg_dev {
 	atomic_t			state;
 	struct work_struct		subsys_up_work;
 	struct work_struct		usb_type_work;
+/* add for fast_capacity start */
+	bool			fast_capacity_enable;
+	struct delayed_work	report_fast_capacity_work;
+	struct work_struct	update_prop_work;
+	int					fast_capacity;
+	time_t				report_begin;
+	bool				discharging_smooth;
+/* add for fast_capacity end */
+	struct delayed_work	screen_on_select_fcc_work;
+#ifdef ZTE_CHARGER_EXT_BATTERY
+	int					last_soc;
+	struct delayed_work	update_soc_work;
+#endif
 	int				fake_soc;
-	bool				block_tx;
-	bool				ship_mode_en;
+	bool			block_tx;
+	bool			ship_mode_en;
+	bool			charging_enabled;
+	bool			battery_charging_enabled;
+	bool			usb_suspend;
+	bool			usb_present;
+	u16				oem_battery_type;
+	bool			screen_is_on;
+	u32				resistance_id;
+	u32				recharge_soc;
+	u32				adsp_debug;
 	bool				debug_battery_detected;
 	bool				wls_fw_update_reqd;
 	u32				wls_fw_version;
@@ -257,6 +339,8 @@ struct battery_chg_dev {
 	bool				restrict_chg_en;
 	/* To track the driver initialization status */
 	bool				initialized;
+	u32				healthd_batt_prop_masks;
+	u32				healthd_usb_prop_masks;
 };
 
 static const int battery_prop_map[BATT_PROP_MAX] = {
@@ -538,6 +622,8 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 {
 	struct battery_charger_resp_msg *resp_msg = data;
 	struct battery_model_resp_msg *model_resp_msg = data;
+	struct battery_charger_get_resistance_id_msg *resistance_id_msg = data;
+	struct battery_charger_adsp_debug_msg *adsp_debug_msg = data;
 	struct wireless_fw_check_resp *fw_check_msg;
 	struct wireless_fw_push_buf_resp *fw_resp_msg;
 	struct wireless_fw_update_status *fw_update_msg;
@@ -546,6 +632,15 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 	bool ack_set = false;
 
 	switch (resp_msg->hdr.opcode) {
+	case BC_RESISTANCE_ID_REQ:
+		pr_info("Receive BC_RESISTANCE_ID_REQ");
+		if (len == sizeof(*resistance_id_msg)) {
+			bcdev->resistance_id = resistance_id_msg->battery_id;
+			ack_set = true;
+			pr_info("resistance_id: %d", bcdev->resistance_id);
+		}
+		break;
+
 	case BC_BATTERY_STATUS_GET:
 		pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
 
@@ -639,6 +734,12 @@ static void handle_message(struct battery_chg_dev *bcdev, void *data,
 				len);
 		}
 		break;
+	case BC_ADSP_DEBUG:
+		if (len == sizeof(*adsp_debug_msg)) {
+			ack_set = true;
+			pr_info("BC_ADSP_DEBUG");
+		}
+		break;
 	default:
 		pr_err("Unknown opcode: %u\n", resp_msg->hdr.opcode);
 		break;
@@ -664,6 +765,7 @@ static void battery_chg_update_uusb_type(struct battery_chg_dev *bcdev,
 		return;
 	}
 
+	pr_info("%s USB_SCOPE=%d\n", __func__, pst->prop[USB_SCOPE]);
 	switch (pst->prop[USB_SCOPE]) {
 	case POWER_SUPPLY_SCOPE_DEVICE:
 		if (adap_type == POWER_SUPPLY_USB_TYPE_SDP ||
@@ -714,14 +816,14 @@ static void battery_chg_update_usb_type_work(struct work_struct *work)
 		pr_err("Failed to read USB_ADAP_TYPE rc=%d\n", rc);
 		return;
 	}
+	rc = read_property_id(bcdev, pst, USB_OEM_CHARGER_TYPE);
 
 	/* Reset usb_icl_ua whenever USB adapter type changes */
 	if (pst->prop[USB_ADAP_TYPE] != POWER_SUPPLY_USB_TYPE_SDP &&
 	    pst->prop[USB_ADAP_TYPE] != POWER_SUPPLY_USB_TYPE_PD)
 		bcdev->usb_icl_ua = 0;
 
-	pr_debug("usb_adap_type: %u\n", pst->prop[USB_ADAP_TYPE]);
-
+	pr_info("usb_adap_type: %u\n", pst->prop[USB_ADAP_TYPE]);
 	switch (pst->prop[USB_ADAP_TYPE]) {
 	case POWER_SUPPLY_USB_TYPE_SDP:
 		usb_psy_desc.type = POWER_SUPPLY_TYPE_USB;
@@ -752,8 +854,451 @@ static void battery_chg_update_usb_type_work(struct work_struct *work)
 		break;
 	}
 
+	if (bcdev->oem_battery_type == OEM_BATTERY_TYPE_LOW) {
+		/*for the low battery, vote fcc to 7380ma*/
+		rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
+				BATT_FCC_USER, 7380);
+	}
 	battery_chg_update_uusb_type(bcdev, pst->prop[USB_ADAP_TYPE]);
 }
+
+/* add for fast_capacity start */
+static int getRandCapicity(void)
+{
+	u8 rand;
+
+	get_random_bytes(&rand, 1);
+	rand = rand & 0x0f;
+
+	return rand;
+}
+
+static void battery_chg_update_healthd_prop(struct battery_chg_dev *bcdev)
+{
+	int index = 0;
+	struct psy_state *pst;
+	int rc = 0;
+
+	if (bcdev == NULL) {
+		return;
+	}
+
+	pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	// pr_info("healthd_batt_prop_masks: %d", bcdev->healthd_batt_prop_masks);
+	for (index = 0; index < 32; index++) {
+		if (((bcdev->healthd_batt_prop_masks >> index) & 0x01) != 0) {
+			rc = read_property_id(bcdev, pst, index);
+			if (rc != 0) {
+				return;
+			}
+			pr_debug("read battery prop: %d, prop_id: %d", pst->prop[index], index);
+		}
+	}
+
+	pst = &bcdev->psy_list[PSY_TYPE_USB];
+	//pr_info("healthd_usb_prop_masks: %d", bcdev->healthd_usb_prop_masks);
+	for (index = 0; index < 32; index++) {
+		if (((bcdev->healthd_usb_prop_masks >> index) & 0x01) != 0) {
+			rc = read_property_id(bcdev, pst, index);
+			if (rc != 0) {
+				return;
+			}
+			pr_debug("read usb prop: %d, prop_id: %d", pst->prop[index], index);
+			if (index == USB_ONLINE) {
+				pr_info("USB_ONLINE: %d\n", pst->prop[index]);
+			}
+		}
+	}
+}
+
+#define FULL_SOC							10000
+static void battery_chg_update_prop_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev,
+						update_prop_work);
+	struct psy_state *usb_pst = &bcdev->psy_list[PSY_TYPE_USB];
+	struct psy_state *battery_pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	static int last_oem_charger_type = -1;
+	static int last_battery_status = POWER_SUPPLY_STATUS_UNKNOWN;
+	int oem_charger_type = -1;
+	int battery_status = POWER_SUPPLY_STATUS_UNKNOWN;
+	int online = 0;
+	int ui_capacity = -1;
+	struct timespec ts;
+
+	read_property_id(bcdev, usb_pst, USB_OEM_CHARGER_TYPE);
+	read_property_id(bcdev, battery_pst, BATT_CAPACITY);
+	read_property_id(bcdev, battery_pst, BATT_STATUS);
+	read_property_id(bcdev, battery_pst, BATT_CURR_NOW);
+
+	battery_chg_update_healthd_prop(bcdev);
+
+	oem_charger_type = usb_pst->prop[USB_OEM_CHARGER_TYPE];
+	online = usb_pst->prop[USB_ONLINE];
+	battery_status = battery_pst->prop[BATT_STATUS];
+
+	pr_info("fast_capacity online=%d,oem_charger_type=%d,last_oem_charger_type=%d",
+			online, oem_charger_type, last_oem_charger_type);
+	if (online && oem_charger_type == 7 && last_oem_charger_type != 7) {
+#ifdef CONFIG_ZTE_BOOT_MODE
+		if (socinfo_get_charger_flag()) {
+			pr_info("in poweroff charge, no need to report fast_capacity\n");
+			goto update_last_status;
+		}
+#endif
+		if (bcdev->fake_soc > 0) {
+			ui_capacity = bcdev->fake_soc;
+		} else {
+			ui_capacity = DIV_ROUND_CLOSEST(battery_pst->prop[BATT_CAPACITY], 100);
+		}
+		if (ui_capacity >= 0 &&	ui_capacity != bcdev->fast_capacity / 100) {
+			bcdev->fast_capacity = ui_capacity * 100 + getRandCapicity();
+			if (bcdev->fast_capacity > FULL_SOC) {
+				pr_info("bcdev->fast_capacity is %d, ui_capacity is %d\n",
+						bcdev->fast_capacity, ui_capacity);
+				bcdev->fast_capacity = FULL_SOC;
+			}
+			pr_info("1 set bcdev->fast_capacity to %d\n", bcdev->fast_capacity);
+		}
+		pr_info("start work to reprot fast_capacity 1\n");
+		ts = ktime_to_timespec(ktime_get_boottime());
+		bcdev->report_begin  = ts.tv_sec;
+		pm_wakeup_dev_event(bcdev->dev, 1100, true);
+		cancel_delayed_work(&bcdev->report_fast_capacity_work);
+		schedule_delayed_work(&bcdev->report_fast_capacity_work, msecs_to_jiffies(1000));
+		bcdev->discharging_smooth = false;
+		goto update_last_status;
+	}
+
+update_last_status:
+	last_oem_charger_type = oem_charger_type;
+	last_battery_status = battery_status;
+}
+
+#define EVENT_STRING_LENGTH 64
+static void send_capacity_event(struct battery_chg_dev *bcdev, int fast_capacity)
+{
+	char event_string[EVENT_STRING_LENGTH];
+	char *envp[2] = { event_string, NULL };
+
+	pr_info("fast_capacity=%d\n", fast_capacity);
+
+	snprintf(event_string, EVENT_STRING_LENGTH, "capacity=%d", fast_capacity);
+	kobject_uevent_env(&bcdev->dev->kobj, KOBJ_CHANGE, envp);
+
+}
+#ifdef ZTE_CHARGER_2S_BATTERY
+/* 2S single 2100mAh battery */
+/* x(A) * 1000/3600 * y(Sec) = 2100/10000 */
+/* About 12A FCC */
+#define FAST_CAPACITY_INCREASE_DELAY_FAST   60
+/* About 9.5A FCC */
+#define FAST_CAPACITY_INCREASE_DELAY_LOW    80
+/* About 5A FCC */
+#define FAST_CAPACITY_INCREASE_DELAY_MED    150
+/* About 1.5A FCC */
+#define FAST_CAPACITY_INCREASE_DELAY_HIGH   500
+#else
+/* 4200mAh battery */
+/* x(A) * 1000/3600 * y(Sec) = 4200/10000 */
+/* About 10A FCC */
+#define FAST_CAPACITY_INCREASE_DELAY_FAST	150
+/* About 6A FCC */
+#define FAST_CAPACITY_INCREASE_DELAY_LOW	250
+/* About 2.5A FCC */
+#define FAST_CAPACITY_INCREASE_DELAY_MED	600
+/* About 1A FCC */
+#define FAST_CAPACITY_INCREASE_DELAY_HIGH	1500
+#endif
+/* time dealy to change fake soc to catch up real soc */
+#define FAKE_CAPACITY_CATCH_DELAY			60000
+
+#define WAIT_TIMES_NORMAL_CHARGE			8
+#define WAIT_TIMES_POWEROFF_CHARGE			50
+#define MIN_WAIT_SEC_TO_EXIT				2
+#define MAX_WAIT_SEC_TO_EXIT				15
+
+static void battery_chg_report_fast_capacity_work(struct work_struct *work)
+{
+	static bool is_work_running = false;
+	static int batt_stat_error_times = 0;
+	static int current_error_times = 0;
+	int ui_capacity = -1, schedule_delay = -1, batt_status = -1, current_now = -1;
+	int oem_charger_type = -1, full_design = 5000;
+	struct timespec ts;
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev,
+						report_fast_capacity_work.work);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	struct psy_state *usb_pst = &bcdev->psy_list[PSY_TYPE_USB];
+
+	if (is_work_running) {
+		/* work already running, ignore */
+		pr_err("work already running, ignore\n");
+		return;
+	}
+	is_work_running = true;
+	ui_capacity = DIV_ROUND_CLOSEST(pst->prop[BATT_CAPACITY], 100);
+	pr_info("battery_chg_report_fast_capacity_work running, ui_capacity: %d", ui_capacity);
+
+	batt_status = pst->prop[BATT_STATUS];
+	if (batt_status != POWER_SUPPLY_STATUS_CHARGING) {
+		batt_stat_error_times++;
+		pr_info("batt_status is not charging: %d, check again\n", batt_status);
+		read_property_id(bcdev, pst, BATT_STATUS);
+		batt_status = pst->prop[BATT_STATUS];
+		if (batt_status != POWER_SUPPLY_STATUS_CHARGING) {
+			/* if fake_soc not set and error times exceeds, exit work */
+			pr_info("batt_status is not charging: %d, error_times: %d\n",
+					batt_status, batt_stat_error_times);
+			if (bcdev->fake_soc < 0 && batt_stat_error_times > 1) {
+				is_work_running = false;
+				return;
+			}
+		}
+	} else {
+		batt_stat_error_times = 0;
+	}
+
+	current_now = pst->prop[BATT_CURR_NOW];
+	full_design = pst->prop[BATT_CHG_FULL_DESIGN] / 1000;
+	if (batt_status == POWER_SUPPLY_STATUS_CHARGING) {
+		if (current_now < 0) {
+			read_property_id(bcdev, pst, BATT_CURR_NOW);
+			current_now = pst->prop[BATT_CURR_NOW];
+		}
+		if (current_now/1000 < -10) {
+			current_error_times++;
+			/* current_now is negetive, skip fast_capacity increase */
+			schedule_delay = FAST_CAPACITY_INCREASE_DELAY_MED;
+			pr_info("current_now is %d, skip increase\n", current_now);
+			goto exit;
+		} else {
+			current_error_times = 0;
+		}
+		if (current_error_times > 5) {
+			/* current_now negative for too long, exit */
+			pr_info("current_error_times is %d, exit\n", current_error_times);
+			bcdev->fake_soc = -EINVAL;
+			power_supply_changed(pst->psy);
+			is_work_running = false;
+			return;
+		}
+
+		/* In progress deal with fake soc and normal charge plugin may also run here
+			we should continue deal with fake_soc and not send fast_capacity */
+		oem_charger_type = usb_pst->prop[USB_OEM_CHARGER_TYPE];
+		if (oem_charger_type != 7) {
+			if (bcdev->fast_capacity > 0) {
+				pr_info("non-fast charge, clear bcdev->fast_capacity\n");
+				bcdev->fast_capacity = -EINVAL;
+			}
+			if (bcdev->fake_soc < 0) {
+				is_work_running = false;
+				pr_info("non-fast charge fake soc not set, exit\n");
+				return;
+			} else if (bcdev->fake_soc < ui_capacity) {
+				bcdev->fake_soc = bcdev->fake_soc + 1;
+				if (ui_capacity == bcdev->fake_soc) {
+					bcdev->fake_soc = -EINVAL;
+					power_supply_changed(pst->psy);
+					is_work_running = false;
+					pr_info("non-fast charge fake_soc catch up ui_capacity, exit\n");
+					return;
+				}
+				if (ui_capacity - bcdev->fake_soc > 2)
+					schedule_delay = FAKE_CAPACITY_CATCH_DELAY / 2;
+				else
+					schedule_delay = FAKE_CAPACITY_CATCH_DELAY;
+			} else {
+				schedule_delay = FAKE_CAPACITY_CATCH_DELAY;
+			}
+			pr_info("non-fast charge fake_soc:%d, ui_capacity:%d\n", bcdev->fake_soc, ui_capacity);
+		} else {
+			if (bcdev->fast_capacity < FULL_SOC) {
+				bcdev->fast_capacity = bcdev->fast_capacity + 1;
+			}
+			if (bcdev->fast_capacity / 100 != ui_capacity) {
+				if (bcdev->fast_capacity / 100 != bcdev->fake_soc) {
+					/* set fake_soc to fast_capacity */
+					bcdev->fake_soc = bcdev->fast_capacity / 100;
+					pr_info("fake_soc update to %d, send to HLOS\n", bcdev->fake_soc);
+					power_supply_changed(pst->psy);
+				}
+				if (bcdev->fast_capacity / 100 > ui_capacity) {
+					/* fast_capacity above real capacity, slow down increase speed */
+					if (bcdev->fast_capacity / 100 - ui_capacity > 2)
+						schedule_delay = FAST_CAPACITY_INCREASE_DELAY_HIGH * 3;
+					else if (bcdev->fast_capacity / 100 - ui_capacity > 1)
+						schedule_delay = FAST_CAPACITY_INCREASE_DELAY_HIGH * 2;
+					else
+						schedule_delay = FAST_CAPACITY_INCREASE_DELAY_HIGH;
+				} else if (bcdev->fast_capacity / 100 < ui_capacity) {
+					if (ui_capacity - bcdev->fast_capacity / 100 > 1) {
+						/* fast_capacity below real capacity more than 2, fastest speed */
+						schedule_delay = FAST_CAPACITY_INCREASE_DELAY_FAST;
+					} else {
+						/* fast_capacity below real capacity, speed up increase speed */
+						schedule_delay = FAST_CAPACITY_INCREASE_DELAY_LOW;
+					}
+				}
+			} else {
+				/* set fake_soc to -EINVAL */
+				bcdev->fake_soc = -EINVAL;
+				/* This may lead to soc jump, fast_capacity just catchup ui_capacity
+				but ui_capacity update again */
+				/* power_supply_changed(pst->psy);*/
+				if (bcdev->fast_capacity == FULL_SOC) {
+					is_work_running = false;
+					send_capacity_event(bcdev, bcdev->fast_capacity);
+					power_supply_changed(pst->psy);
+					pr_info("fast capacity reach full and fake_soc not set, exit\n");
+					return;
+				}
+				read_property_id(bcdev, pst, BATT_CURR_NOW);
+				current_now = pst->prop[BATT_CURR_NOW] / 1000;
+				/* fast_capacity equal real capacity, use current_now calculate */
+				schedule_delay = max(FAST_CAPACITY_INCREASE_DELAY_FAST,
+					min(full_design * 360 / current_now, FAST_CAPACITY_INCREASE_DELAY_MED));
+			}
+			pr_info("charging increase fast_capacity, delay: %d\n", schedule_delay);
+			if (bcdev->fast_capacity % 100 == 0 && pst->psy) {
+				pr_info("capacity increase 1%, send to HLOS\n");
+				power_supply_changed(pst->psy);
+			}
+			send_capacity_event(bcdev, bcdev->fast_capacity);
+		}
+	} else if (batt_status == POWER_SUPPLY_STATUS_FULL) {
+				/* In progress deal with fake soc and normal charge plugin may also run here
+			we should continue deal with fake_soc and not send fast_capacity */
+		oem_charger_type = usb_pst->prop[USB_OEM_CHARGER_TYPE];
+		if (oem_charger_type != 7) {
+			if (bcdev->fast_capacity > 0) {
+				pr_info("non-fast charge, clear bcdev->fast_capacity\n");
+				bcdev->fast_capacity = -EINVAL;
+			}
+			if (bcdev->fake_soc < 0) {
+				is_work_running = false;
+				pr_info("non-fast charge fake soc not set, exit\n");
+				return;
+			} else if (bcdev->fake_soc < ui_capacity) {
+				bcdev->fake_soc = bcdev->fake_soc + 1;
+				if (ui_capacity == bcdev->fake_soc) {
+					bcdev->fake_soc = -EINVAL;
+					power_supply_changed(pst->psy);
+					is_work_running = false;
+					pr_info("non-fast charge fake_soc catch up ui_capacity, exit\n");
+					return;
+				}
+				if (ui_capacity - bcdev->fake_soc > 2)
+					schedule_delay = FAKE_CAPACITY_CATCH_DELAY / 2;
+				else
+					schedule_delay = FAKE_CAPACITY_CATCH_DELAY;
+			} else {
+				schedule_delay = FAKE_CAPACITY_CATCH_DELAY;
+			}
+			pr_info("non-fast charge fake_soc:%d, ui_capacity:%d\n", bcdev->fake_soc, ui_capacity);
+		} else {
+			pr_info("battery full, deal with fast_capacity:%d, ui:%d\n", bcdev->fast_capacity, ui_capacity);
+			if (bcdev->fast_capacity / 100 < ui_capacity) {
+				bcdev->fast_capacity = bcdev->fast_capacity + 1;
+			}
+			if (bcdev->fast_capacity / 100 != ui_capacity) {
+				if (bcdev->fast_capacity / 100 != bcdev->fake_soc) {
+					bcdev->fake_soc = bcdev->fast_capacity / 100;
+					/* set fake_capacity to fast_capacity */
+					pr_info("fake_soc update to %d, send to HLOS\n", bcdev->fake_soc);
+					power_supply_changed(pst->psy);
+				}
+				if (bcdev->fast_capacity / 100 > ui_capacity) {
+					/* fast_capacity above real capacity, just wait */
+					schedule_delay = FAST_CAPACITY_INCREASE_DELAY_HIGH;
+				} else if (bcdev->fast_capacity / 100 < ui_capacity) {
+					/* fast_capacity below real capacity, speed up increase speed */
+					schedule_delay = FAST_CAPACITY_INCREASE_DELAY_LOW;
+				}
+			} else {
+				/* set fake_capacity to -EINVAL */
+				bcdev->fake_soc = -EINVAL;
+				if (bcdev->fast_capacity == FULL_SOC) {
+					is_work_running = false;
+					send_capacity_event(bcdev, bcdev->fast_capacity);
+					pr_info("fast capacity reach 100 and fake capacity not set, exit\n");
+					return;
+				}
+				pr_info("fast capacity equal with ui_capacity but not 100, wait\n");
+				schedule_delay = FAST_CAPACITY_INCREASE_DELAY_HIGH;
+			}
+		}
+	} else if (batt_status == POWER_SUPPLY_STATUS_DISCHARGING) {
+		pr_info("discharging, deal with fake_soc: %d, ui:%d\n", bcdev->fake_soc, ui_capacity);
+		/* fake_soc still above ui_capacity,
+		 we decrease fake_soc by step */
+		if (bcdev->fake_soc > ui_capacity) {
+			if (bcdev->discharging_smooth) {
+				pr_info("fake_soc decrease 1%, send to HLOS\n");
+				bcdev->fake_soc = bcdev->fake_soc - 1;
+				power_supply_changed(pst->psy);
+				if (bcdev->fake_soc > ui_capacity) {
+					schedule_delay = FAKE_CAPACITY_CATCH_DELAY;
+				} else {
+					bcdev->fake_soc = -EINVAL;
+					power_supply_changed(pst->psy);
+					is_work_running = false;
+					pr_info("fake capacity catch up ui_capacity, exit\n");
+					return;
+				}
+			} else {
+				schedule_delay = FAKE_CAPACITY_CATCH_DELAY;
+				bcdev->discharging_smooth = true;
+			}
+		} else if (bcdev->fake_soc < ui_capacity) {
+			/* wait for more time to make fake_soc equal with ui_capacity*/
+			schedule_delay = FAKE_CAPACITY_CATCH_DELAY;
+		} else {
+			bcdev->fake_soc = -EINVAL;
+			power_supply_changed(pst->psy);
+			is_work_running = false;
+			pr_info("fake capacity equal with ui_capacity, exit\n");
+			return;
+		}
+	} else if (batt_status == POWER_SUPPLY_STATUS_NOT_CHARGING) {
+		if (bcdev->fake_soc < 0) {
+			is_work_running = false;
+			return;
+		} else {
+			schedule_delay = FAKE_CAPACITY_CATCH_DELAY;
+			if (bcdev->fake_soc == ui_capacity) {
+				bcdev->fake_soc = -EINVAL;
+				power_supply_changed(pst->psy);
+				is_work_running = false;
+				pr_info("fake capacity equal with ui_capacity, exit\n");
+				return;
+			}
+		}
+	} else {
+		pr_info("unknown status, exit\n");
+		bcdev->fake_soc = -EINVAL;
+		power_supply_changed(pst->psy);
+		is_work_running = false;
+		return;
+	}
+
+	if (bcdev->fake_soc < 0) {
+		ts = ktime_to_timespec(ktime_get_boottime());
+		if (ts.tv_sec - bcdev->report_begin > MAX_WAIT_SEC_TO_EXIT) {
+			pr_info("max wait time reach, exit\n");
+			is_work_running = false;
+			return;
+		}
+	}
+
+exit:
+	/* acquire wake lock for schedule_delay + 100ms to prevent from sleep */
+	pm_wakeup_event(bcdev->dev, schedule_delay + 100);
+	schedule_delayed_work(&bcdev->report_fast_capacity_work, msecs_to_jiffies(schedule_delay));
+	is_work_running = false;
+}
+/* add for fast_capacity end */
 
 static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 				size_t len)
@@ -785,6 +1330,7 @@ static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 	}
 
 	if (pst && pst->psy) {
+
 		/*
 		 * For charger mode, keep the device awake at least for 50 ms
 		 * so that device won't enter suspend when a non-SDP charger
@@ -794,7 +1340,23 @@ static void handle_notification(struct battery_chg_dev *bcdev, void *data,
 		 * unplugged).
 		 */
 		power_supply_changed(pst->psy);
+
+		pr_info("power_supply_changed,online=%d,type=%d,oemtype=%d,icl=%d,soc=%d,vbat=%d,ibat=%d,temp=%d",
+			bcdev->psy_list[PSY_TYPE_USB].prop[USB_ONLINE],
+			bcdev->psy_list[PSY_TYPE_USB].prop[USB_ADAP_TYPE],
+			bcdev->psy_list[PSY_TYPE_USB].prop[USB_OEM_CHARGER_TYPE],
+			bcdev->psy_list[PSY_TYPE_USB].prop[USB_INPUT_CURR_LIMIT],
+			bcdev->psy_list[PSY_TYPE_BATTERY].prop[BATT_CAPACITY],
+			bcdev->psy_list[PSY_TYPE_BATTERY].prop[BATT_VOLT_NOW],
+			bcdev->psy_list[PSY_TYPE_BATTERY].prop[BATT_CURR_NOW],
+			bcdev->psy_list[PSY_TYPE_BATTERY].prop[BATT_TEMP]
+			);
 		pm_wakeup_dev_event(bcdev->dev, 50, true);
+
+		/* add for fast_capacity start */
+		if (bcdev->fast_capacity_enable)
+			schedule_work(&bcdev->update_prop_work);
+		/* add for fast_capacity end */
 	}
 }
 
@@ -908,11 +1470,6 @@ static int usb_psy_set_icl(struct battery_chg_dev *bcdev, u32 prop_id, int val)
 		return rc;
 	}
 
-	/* Allow this only for SDP or USB_PD and not for other charger types */
-	if (pst->prop[USB_ADAP_TYPE] != POWER_SUPPLY_USB_TYPE_SDP &&
-	    pst->prop[USB_ADAP_TYPE] != POWER_SUPPLY_USB_TYPE_PD)
-		return -EINVAL;
-
 	/*
 	 * Input current limit (ICL) can be set by different clients. E.g. USB
 	 * driver can request for a current of 500/900 mA depending on the
@@ -928,7 +1485,7 @@ static int usb_psy_set_icl(struct battery_chg_dev *bcdev, u32 prop_id, int val)
 	if (rc < 0) {
 		pr_err("Failed to set ICL (%u uA) rc=%d\n", temp, rc);
 	} else {
-		pr_debug("Set ICL to %u\n", temp);
+		pr_err("Set ICL to %u\n", temp);
 		bcdev->usb_icl_ua = temp;
 	}
 
@@ -941,7 +1498,8 @@ static int usb_psy_get_prop(struct power_supply *psy,
 {
 	struct battery_chg_dev *bcdev = power_supply_get_drvdata(psy);
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
-	int prop_id, rc;
+	int prop_id, rc = 0;
+	char current_pid_name[TASK_COMM_LEN] = {0};
 
 	pval->intval = -ENODATA;
 
@@ -949,7 +1507,24 @@ static int usb_psy_get_prop(struct power_supply *psy,
 	if (prop_id < 0)
 		return prop_id;
 
-	rc = read_property_id(bcdev, pst, prop_id);
+	get_task_comm(current_pid_name, current);
+	pr_debug("current pid name: %s\n", current_pid_name);
+	if (strstr(current_pid_name, "health") != NULL) {
+		pr_debug("healthd_usb_prop_masks: %x for prop_id: %d\n", (bcdev->healthd_usb_prop_masks & (0x1 << prop_id)), prop_id);
+		if ((bcdev->healthd_usb_prop_masks & (0x1 << prop_id)) == 0) {
+			rc = read_property_id(bcdev, pst, prop_id);
+			bcdev->healthd_usb_prop_masks |= (0x1 << prop_id);
+		} else {
+			pr_debug("pst->prop[%d]: %d\n", prop_id, pst->prop[prop_id]);
+		}
+
+		if (prop_id == USB_ONLINE) {
+			pr_info("USB_ONLINE: %d\n", pst->prop[prop_id]);
+		}
+	} else {
+		rc = read_property_id(bcdev, pst, prop_id);
+	}
+
 	if (rc < 0)
 		return rc;
 
@@ -1048,11 +1623,38 @@ static int __battery_psy_set_charge_current(struct battery_chg_dev *bcdev,
 	if (rc < 0) {
 		pr_err("Failed to set FCC %u, rc=%d\n", fcc_ua, rc);
 	} else {
-		pr_debug("Set FCC to %u uA\n", fcc_ua);
+		pr_err("Set FCC to %u uA\n", fcc_ua);
 		bcdev->last_fcc_ua = fcc_ua;
 	}
 
 	return rc;
+}
+
+enum batt_fcc_offset {
+	USB_SCR_OFF = 0,
+	USB_SCR_ON,
+	OFFSET_NUMBERS,
+};
+#define LEVELS_OF_EACH_SCENE	10
+static int battery_get_fcc_by_thermal_level(struct battery_chg_dev *bcdev, int level)
+{
+	u32 fcc_ua = 0;
+	int calc_level = 0;
+	bool support_screenon = false;
+
+	if (bcdev->num_thermal_levels / LEVELS_OF_EACH_SCENE >= OFFSET_NUMBERS) {
+		support_screenon = true;
+	}
+	if (support_screenon && bcdev->screen_is_on && level > 0) {
+		calc_level = level + LEVELS_OF_EACH_SCENE;
+	} else {
+		calc_level = level;
+	}
+	fcc_ua = bcdev->thermal_levels[calc_level];
+	pr_info("battery_get_fcc_by_thermal_level all=%d,screenon=%d,calc_level=%d,fcc=%d\n",
+		bcdev->num_thermal_levels, bcdev->screen_is_on, calc_level, fcc_ua);
+
+	return fcc_ua;
 }
 
 static int battery_psy_set_charge_current(struct battery_chg_dev *bcdev,
@@ -1072,10 +1674,11 @@ static int battery_psy_set_charge_current(struct battery_chg_dev *bcdev,
 	if (val < 0 || val > bcdev->num_thermal_levels)
 		return -EINVAL;
 
-	fcc_ua = bcdev->thermal_levels[val];
+	bcdev->curr_thermal_level = val;
+	fcc_ua = battery_get_fcc_by_thermal_level(bcdev, val);
 	prev_fcc_ua = bcdev->thermal_fcc_ua;
 	bcdev->thermal_fcc_ua = fcc_ua;
-
+	pr_info("battery_psy_set_charge_current thermal level=%d,fcc=%d\n", val, fcc_ua);
 	rc = __battery_psy_set_charge_current(bcdev, fcc_ua);
 	if (!rc)
 		bcdev->curr_thermal_level = val;
@@ -1091,7 +1694,8 @@ static int battery_psy_get_prop(struct power_supply *psy,
 {
 	struct battery_chg_dev *bcdev = power_supply_get_drvdata(psy);
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
-	int prop_id, rc;
+	int prop_id, rc = 0;
+	char current_pid_name[TASK_COMM_LEN] = {0};
 
 	pval->intval = -ENODATA;
 
@@ -1106,7 +1710,20 @@ static int battery_psy_get_prop(struct power_supply *psy,
 	if (prop_id < 0)
 		return prop_id;
 
-	rc = read_property_id(bcdev, pst, prop_id);
+	get_task_comm(current_pid_name, current);
+	pr_debug("current pid name: %s\n", current_pid_name);
+	if (strstr(current_pid_name, "health") != NULL) {
+		pr_debug("healthd_batt_prop_masks: %x for prop_id: %d\n", (bcdev->healthd_batt_prop_masks & (0x1 << prop_id)), prop_id);
+		if ((bcdev->healthd_batt_prop_masks & (0x1 << prop_id)) == 0) {
+			rc = read_property_id(bcdev, pst, prop_id);
+			bcdev->healthd_batt_prop_masks |= (0x1 << prop_id);
+		} else {
+			pr_debug("pst->prop[%d]: %d\n", prop_id, pst->prop[prop_id]);
+		}
+	} else {
+		rc = read_property_id(bcdev, pst, prop_id);
+	}
+
 	if (rc < 0)
 		return rc;
 
@@ -1116,9 +1733,17 @@ static int battery_psy_get_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_CAPACITY:
 		pval->intval = DIV_ROUND_CLOSEST(pst->prop[prop_id], 100);
-		if (IS_ENABLED(CONFIG_QTI_PMIC_GLINK_CLIENT_DEBUG) &&
-		   (bcdev->fake_soc >= 0 && bcdev->fake_soc <= 100))
-			pval->intval = bcdev->fake_soc;
+		/* add for fast_capacity start */
+		if (bcdev->fast_capacity_enable) {
+			if ((bcdev->fake_soc >= 0 && bcdev->fake_soc <= 100))
+				pval->intval = bcdev->fake_soc;
+		} else {
+			if (IS_ENABLED(CONFIG_QTI_PMIC_GLINK_CLIENT_DEBUG) &&
+			   (bcdev->fake_soc >= 0 && bcdev->fake_soc <= 100))
+				pval->intval = bcdev->fake_soc;
+		}
+		/* add for fast_capacity end */
+
 		break;
 	case POWER_SUPPLY_PROP_TEMP:
 		pval->intval = DIV_ROUND_CLOSEST((int)pst->prop[prop_id], 10);
@@ -1202,6 +1827,144 @@ static const struct power_supply_desc batt_psy_desc = {
 	.property_is_writeable	= battery_psy_prop_is_writeable,
 };
 
+#if IS_ENABLED(CONFIG_VENDOR_ZTE_MISC)
+int battery_chg_set_screen_on(const char *val, const void *arg)
+{
+	struct battery_chg_dev *bcdev = (struct battery_chg_dev *) arg;
+
+	if (bcdev == NULL)
+		return -EINVAL;
+	if (kstrtobool(val, &bcdev->screen_is_on))
+		return -EINVAL;
+
+	pr_info("screen_on_store,bcdev->screen_is_on=%d\n", bcdev->screen_is_on);
+	{
+		cancel_delayed_work_sync(&bcdev->screen_on_select_fcc_work);
+		if (bcdev->screen_is_on) {
+			schedule_delayed_work(&bcdev->screen_on_select_fcc_work, msecs_to_jiffies(1000 * 70));
+		} else {
+			schedule_delayed_work(&bcdev->screen_on_select_fcc_work, msecs_to_jiffies(1000));
+		}
+	}
+#ifdef ZTE_CHARGER_EXT_BATTERY
+	if (bcdev->screen_is_on) {
+		cancel_delayed_work(&bcdev->update_soc_work);
+		schedule_delayed_work(&bcdev->update_soc_work, msecs_to_jiffies(50));
+		pr_info("start battery_chg_update_soc_work for screen on\n");
+	}
+#endif
+	return 0;
+}
+
+int battery_chg_get_screen_on(char *val, const void *arg)
+{
+	struct battery_chg_dev *bcdev = (struct battery_chg_dev *) arg;
+
+	return scnprintf(val, PAGE_SIZE, "%d\n", bcdev->screen_is_on);
+}
+
+struct zte_misc_ops screen_on_node = {
+	.node_name = "screen_on",
+	.set = battery_chg_set_screen_on,
+	.get = battery_chg_get_screen_on,
+	.free = NULL,
+	.arg = NULL,
+};
+
+int battery_chg_get_oem_charger_type(char *val, const void *arg)
+{
+	int rc;
+	struct battery_chg_dev *bcdev = (struct battery_chg_dev *) arg;
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+
+	rc = read_property_id(bcdev, pst, USB_OEM_CHARGER_TYPE);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(val, PAGE_SIZE, "%d\n", pst->prop[USB_OEM_CHARGER_TYPE]);
+}
+
+struct zte_misc_ops oem_charger_type_node = {
+	.node_name = "charge_type_oem",
+	.set = NULL,
+	.get = battery_chg_get_oem_charger_type,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_nu_cep_node = {
+	.node_name = "wls_nu_cep",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_nu_iout_node = {
+	.node_name = "wls_nu_iout",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_nu_usbtype_node = {
+	.node_name = "wls_nu_usbtype",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_nu_vout_node = {
+	.node_name = "wls_nu_vout",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_nu_vrect_node = {
+	.node_name = "wls_nu_vrect",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_boost_en_node = {
+	.node_name = "wls_boost_en",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_nu_fw_update_node = {
+	.node_name = "wls_nu_fw_update",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_nu_ver_node = {
+	.node_name = "wls_nu_ver",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+
+struct zte_misc_ops wls_nu_sleep_node = {
+	.node_name = "wls_nu_sleep",
+	.set = NULL,
+	.get = NULL,
+	.free = NULL,
+	.arg = NULL,
+};
+#endif
+
 static int battery_chg_init_psy(struct battery_chg_dev *bcdev)
 {
 	struct power_supply_config psy_cfg = {};
@@ -1235,6 +1998,23 @@ static int battery_chg_init_psy(struct battery_chg_dev *bcdev)
 	}
 
 	return 0;
+}
+
+static int battery_chg_get_resistance_id(struct battery_chg_dev *bcdev)
+{
+	struct battery_charger_get_resistance_id_msg req_msg = { { 0 } };
+	int rc;
+
+	/* Send request to enable notification */
+	req_msg.hdr.owner = MSG_OWNER_BC;
+	req_msg.hdr.type = MSG_TYPE_REQ_RESP;
+	req_msg.hdr.opcode = BC_RESISTANCE_ID_REQ;
+
+	rc = battery_chg_write(bcdev, &req_msg, sizeof(req_msg));
+	if (rc < 0)
+		pr_err("Failed to enable notification rc=%d\n", rc);
+
+	return rc;
 }
 
 static void battery_chg_subsys_up_work(struct work_struct *work)
@@ -1625,8 +2405,10 @@ static ssize_t fake_soc_store(struct class *c, struct class_attribute *attr,
 
 	bcdev->fake_soc = val;
 	pr_debug("Set fake soc to %d\n", val);
-
-	if (IS_ENABLED(CONFIG_QTI_PMIC_GLINK_CLIENT_DEBUG) && pst->psy)
+	/* add for fast_capacity start */
+	if ((bcdev->fast_capacity_enable || IS_ENABLED(CONFIG_QTI_PMIC_GLINK_CLIENT_DEBUG))
+			&& pst->psy)
+	/* add for fast_capacity end */
 		power_supply_changed(pst->psy);
 
 	return count;
@@ -1786,6 +2568,282 @@ static ssize_t ship_mode_en_show(struct class *c, struct class_attribute *attr,
 }
 static CLASS_ATTR_RW(ship_mode_en);
 
+static ssize_t charging_enabled_store(struct class *c, struct class_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+
+	if (kstrtobool(buf, &bcdev->charging_enabled))
+		return -EINVAL;
+	if (bcdev->charging_enabled == 0) {
+		/* disable charging*/
+		/* ICL below 50mA is same with 0mA, but can differ with other client */
+		usb_psy_set_icl(bcdev, USB_INPUT_CURR_LIMIT, 49000);
+	} else {
+		usb_psy_set_icl(bcdev, USB_INPUT_CURR_LIMIT, 0xFFFFFFFF);
+	}
+	pr_info("charging_enabled_store, prop=%d,en=%d\n", USB_INPUT_CURR_LIMIT, bcdev->charging_enabled);
+	return count;
+}
+static ssize_t charging_enabled_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->charging_enabled);
+}
+static CLASS_ATTR_RW(charging_enabled);
+
+static ssize_t battery_charging_enabled_store(struct class *c, struct class_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	int rc = 0;
+
+	if (kstrtobool(buf, &bcdev->battery_charging_enabled))
+		return -EINVAL;
+	if (bcdev->battery_charging_enabled == 0) {
+		/* disable charging*/
+		rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
+				BATT_FCC_USER, 0);
+	} else {
+		rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
+				BATT_FCC_USER, 0xFFFFFFFF);
+	}
+	pr_info("battery_charging_enabled_store, prop=%d,en=%d,rc=%d\n", BATT_FCC_USER, bcdev->battery_charging_enabled, rc);
+
+	return count;
+}
+static ssize_t battery_charging_enabled_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->battery_charging_enabled);
+}
+static CLASS_ATTR_RW(battery_charging_enabled);
+
+static ssize_t typec_cc_orientation_show(struct class *c, struct class_attribute *attr,
+			char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, BATT_TYPEC_CC_ORIENTATION);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", pst->prop[BATT_TYPEC_CC_ORIENTATION]);
+}
+static CLASS_ATTR_RO(typec_cc_orientation);
+static ssize_t oem_charger_type_show(struct class *c, struct class_attribute *attr,
+			char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_OEM_CHARGER_TYPE);
+	if (rc < 0)
+		return rc;
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", pst->prop[USB_OEM_CHARGER_TYPE]);
+}
+static CLASS_ATTR_RO(oem_charger_type);
+
+static ssize_t oem_battery_type_store(struct class *c, struct class_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+
+	if (kstrtou16(buf, 0, &bcdev->oem_battery_type))
+		return -EINVAL;
+
+	pr_info("oem_battery_type_store,bcdev->oem_battery_type=%d\n", bcdev->oem_battery_type);
+
+	return count;
+}
+static ssize_t oem_battery_type_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->oem_battery_type);
+}
+static CLASS_ATTR_RW(oem_battery_type);
+
+static void battery_chg_screen_on_select_fcc_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev,
+						screen_on_select_fcc_work.work);
+	battery_psy_set_charge_current(bcdev, bcdev->curr_thermal_level);
+}
+static ssize_t screen_is_on_store(struct class *c, struct class_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	if (bcdev == NULL)
+		return -EINVAL;
+	if (kstrtobool(buf, &bcdev->screen_is_on))
+		return -EINVAL;
+
+	pr_info("screen_on_store,bcdev->screen_is_on=%d\n", bcdev->screen_is_on);
+	if (&bcdev->screen_on_select_fcc_work != NULL) {
+		cancel_delayed_work_sync(&bcdev->screen_on_select_fcc_work);
+		if (bcdev->screen_is_on) {
+			schedule_delayed_work(&bcdev->screen_on_select_fcc_work, msecs_to_jiffies(1000 * 70));
+		} else {
+			schedule_delayed_work(&bcdev->screen_on_select_fcc_work, msecs_to_jiffies(1000));
+		}
+	}
+#ifdef ZTE_CHARGER_EXT_BATTERY
+	if (&bcdev->update_soc_work != NULL && bcdev->screen_is_on) {
+		cancel_delayed_work(&bcdev->update_soc_work);
+		schedule_delayed_work(&bcdev->update_soc_work, msecs_to_jiffies(50));
+		pr_debug("start battery_chg_update_soc_work for screen on\n");
+	}
+#endif
+	return count;
+}
+static ssize_t screen_is_on_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->screen_is_on);
+}
+static CLASS_ATTR_RW(screen_is_on);
+
+static ssize_t resistance_id_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	battery_chg_get_resistance_id(bcdev);
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->resistance_id);
+}
+static CLASS_ATTR_RO(resistance_id);
+
+static ssize_t recharge_soc_store(struct class *c, struct class_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	int rc = 0;
+
+	if (kstrtou32(buf, 10, &bcdev->recharge_soc))
+		return -EINVAL;
+
+	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_BATTERY],
+				BATT_RECHARGE_SOC, bcdev->recharge_soc);
+
+	return count;
+}
+
+static ssize_t recharge_soc_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, BATT_RECHARGE_SOC);
+	if (rc < 0)
+		return rc;
+
+	bcdev->recharge_soc = pst->prop[BATT_RECHARGE_SOC];
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->recharge_soc);
+}
+static CLASS_ATTR_RW(recharge_soc);
+
+static ssize_t usb_suspend_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_SUSPEND);
+	if (rc < 0)
+		return rc;
+
+	bcdev->usb_suspend = pst->prop[USB_SUSPEND];
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->usb_suspend);
+}
+static CLASS_ATTR_RO(usb_suspend);
+
+static ssize_t usb_present_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
+	int rc;
+
+	rc = read_property_id(bcdev, pst, USB_PRESENT);
+	if (rc < 0)
+		return rc;
+
+	bcdev->usb_present = pst->prop[USB_PRESENT];
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->usb_present);
+}
+static CLASS_ATTR_RO(usb_present);
+
+static int battery_chg_set_adsp_debug(struct battery_chg_dev *bcdev)
+{
+	struct battery_charger_adsp_debug_msg req_msg = { { 0 } };
+	int rc;
+
+	/* Send request to enable notification */
+	req_msg.hdr.owner = MSG_OWNER_BC;
+	req_msg.hdr.type = MSG_TYPE_REQ_RESP;
+	req_msg.hdr.opcode = BC_ADSP_DEBUG;
+	req_msg.adsp_debug = bcdev->adsp_debug;
+
+	rc = battery_chg_write(bcdev, &req_msg, sizeof(req_msg));
+	if (rc < 0)
+		pr_err("Failed to enable notification rc=%d\n", rc);
+
+	return rc;
+}
+
+static ssize_t adsp_debug_store(struct class *c, struct class_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+	int rc = 0;
+
+	if (kstrtou32(buf, 10, &bcdev->adsp_debug))
+		return -EINVAL;
+
+	rc = battery_chg_set_adsp_debug(bcdev);
+
+	return count;
+}
+
+static ssize_t adsp_debug_show(struct class *c, struct class_attribute *attr,
+				char *buf)
+{
+	struct battery_chg_dev *bcdev = container_of(c, struct battery_chg_dev,
+						battery_class);
+
+	return scnprintf(buf, PAGE_SIZE, "%d\n", bcdev->adsp_debug);
+}
+static CLASS_ATTR_RW(adsp_debug);
+
 static struct attribute *battery_class_attrs[] = {
 	&class_attr_soh.attr,
 	&class_attr_resistance.attr,
@@ -1802,6 +2860,17 @@ static struct attribute *battery_class_attrs[] = {
 	&class_attr_restrict_cur.attr,
 	&class_attr_usb_real_type.attr,
 	&class_attr_usb_typec_compliant.attr,
+	&class_attr_charging_enabled.attr,
+	&class_attr_battery_charging_enabled.attr,
+	&class_attr_typec_cc_orientation.attr,
+	&class_attr_oem_charger_type.attr,
+	&class_attr_oem_battery_type.attr,
+	&class_attr_screen_is_on.attr,
+	&class_attr_resistance_id.attr,
+	&class_attr_recharge_soc.attr,
+	&class_attr_usb_suspend.attr,
+	&class_attr_usb_present.attr,
+	&class_attr_adsp_debug.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(battery_class);
@@ -1847,6 +2916,11 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 
 	of_property_read_string(node, "qcom,wireless-fw-name",
 				&bcdev->wls_fw_name);
+	/* add for fast_capacity start */
+	bcdev->fast_capacity_enable = of_property_read_bool(node, "qcom,fast-capacity-enable");
+
+	pr_info("fast_capacity_enable enabled = %d\n", bcdev->fast_capacity_enable);
+	/* add for fast_capacity end */
 
 	rc = of_property_count_elems_of_size(node, "qcom,thermal-mitigation",
 						sizeof(u32));
@@ -1869,12 +2943,12 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 						i, &val);
 		if (rc < 0)
 			return rc;
-
-		if (val > prev) {
+		/* we use screen on/off config,so the value is not descending. */
+		/* if (val > prev) {
 			pr_err("Thermal levels should be in descending order\n");
 			bcdev->num_thermal_levels = -EINVAL;
 			return 0;
-		}
+		} */
 
 		prev = val;
 	}
@@ -1901,6 +2975,7 @@ static int battery_chg_parse_dt(struct battery_chg_dev *bcdev)
 
 	bcdev->num_thermal_levels = len;
 	bcdev->thermal_fcc_ua = pst->prop[BATT_CHG_CTRL_LIM_MAX];
+	pr_info("qcom,thermal-mitigation num=%d,high=%d\n", bcdev->num_thermal_levels, bcdev->thermal_levels[0]);
 
 	return 0;
 }
@@ -1939,6 +3014,41 @@ static int battery_chg_ship_mode(struct notifier_block *nb, unsigned long code,
 	return NOTIFY_DONE;
 }
 
+#ifdef ZTE_CHARGER_EXT_BATTERY
+static void battery_chg_update_soc_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work, struct battery_chg_dev,
+				update_soc_work.work);
+	struct psy_state *pst;
+	int rc = 0;
+	int soc = 0;
+	unsigned long delay_ms = 0;
+
+	pst = &bcdev->psy_list[PSY_TYPE_BATTERY];
+	rc = read_property_id(bcdev, pst, BATT_CAPACITY);
+	if (!rc) {
+		soc = pst->prop[BATT_CAPACITY];
+	}
+	if (bcdev->last_soc == 0) {
+		bcdev->last_soc = soc;
+	}
+	battery_chg_update_healthd_prop(bcdev);
+	if ((bcdev->last_soc - soc >= 1) || (soc - bcdev->last_soc >= 1)) {
+		pr_info("battery_chg_update_soc_work last_soc=%d,soc=%d\n", bcdev->last_soc, soc);
+		bcdev->last_soc = soc;
+		power_supply_changed(pst->psy);
+	}
+	if (&bcdev->update_soc_work != NULL) {
+		if (bcdev->screen_is_on) {
+			delay_ms = msecs_to_jiffies(UPDATE_SOC_WORK_TIME_MS);
+		} else {
+			delay_ms = msecs_to_jiffies(1000 * 60 * 10);
+		}
+		pr_debug("screen_is_on=%d,delay=%d\n", bcdev->screen_is_on, delay_ms);
+		schedule_delayed_work(&bcdev->update_soc_work, delay_ms);
+	}
+}
+#endif
 static int register_extcon_conn_type(struct battery_chg_dev *bcdev)
 {
 	struct psy_state *pst = &bcdev->psy_list[PSY_TYPE_USB];
@@ -1978,6 +3088,102 @@ static int register_extcon_conn_type(struct battery_chg_dev *bcdev)
 			 bcdev->connector_type ? "uusb" : "Typec");
 
 	return rc;
+}
+
+static void battery_chg_extcon_notify_work(struct work_struct *work)
+{
+	struct battery_chg_dev *bcdev = container_of(work,
+					struct battery_chg_dev, extcon_notify_work);
+	int rc;
+
+	// notify adsp here
+	rc = write_property_id(bcdev, &bcdev->psy_list[PSY_TYPE_WLS],
+				WLS_BOOST_EN, !bcdev->id_state);
+}
+
+static int battery_chg_id_notifier(struct notifier_block *nb,
+	unsigned long event, void *ptr)
+{
+	struct extcon_dev *edev = ptr;
+	struct extcon_nb *enb = container_of(nb, struct extcon_nb, id_nb);
+	struct battery_chg_dev *bcdev = enb->bcdev;
+	enum bcdev_id_state id;
+
+	if (!edev || !bcdev)
+		return NOTIFY_DONE;
+
+	id = event ? BCDEV_ID_GROUND : BCDEV_ID_FLOAT;
+
+	if (bcdev->id_state == id)
+		return NOTIFY_DONE;
+
+	// bcdev->ext_idx = enb->idx;
+
+	dev_info(bcdev->dev, "extcon host:%ld (id:%d) event received\n", event, id);
+
+	bcdev->id_state = id;
+
+	schedule_work(&bcdev->extcon_notify_work);
+
+	return NOTIFY_DONE;
+}
+
+static int battery_chg_extcon_register_notifier(struct battery_chg_dev *bcdev)
+{
+	struct device_node *node = bcdev->dev->of_node;
+	struct extcon_dev *edev;
+	int idx, extcon_cnt, ret = 0;
+	bool check_vbus_state, check_id_state, phandle_found = false;
+
+	extcon_cnt = of_count_phandle_with_args(node, "extcon", NULL);
+	dev_info(bcdev->dev, "%s extcon_cnt:%d\n", __func__, extcon_cnt);
+	if (extcon_cnt < 0) {
+		dev_err(bcdev->dev, "of_count_phandle_with_args failed\n");
+		return -ENODEV;
+	}
+
+	bcdev->extcon_nb = devm_kcalloc(bcdev->dev, extcon_cnt,
+					sizeof(*bcdev->extcon_nb), GFP_KERNEL);
+	if (!bcdev->extcon_nb)
+		return -ENOMEM;
+
+	for (idx = 0; idx < extcon_cnt; idx++) {
+		edev = extcon_get_edev_by_phandle(bcdev->dev, idx);
+		if (IS_ERR(edev) && PTR_ERR(edev) != -ENODEV)
+			return PTR_ERR(edev);
+
+		if (IS_ERR_OR_NULL(edev))
+			continue;
+
+		check_vbus_state = check_id_state = true;
+		phandle_found = true;
+
+		bcdev->extcon_nb[idx].bcdev = bcdev;
+		bcdev->extcon_nb[idx].edev = edev;
+		bcdev->extcon_nb[idx].idx = idx;
+		bcdev->extcon_nb[idx].id_nb.notifier_call = battery_chg_id_notifier;
+		ret = extcon_register_notifier(edev, EXTCON_USB_HOST,
+						&bcdev->extcon_nb[idx].id_nb);
+		if (ret < 0)
+			check_id_state = false;
+
+		/* Update initial ID state */
+		if (check_id_state && extcon_get_state(edev, EXTCON_USB_HOST)) {
+			bcdev->id_state = BCDEV_ID_GROUND;
+			battery_chg_id_notifier(&bcdev->extcon_nb[idx].id_nb,
+						true, edev);
+		} else {
+			bcdev->id_state = BCDEV_ID_FLOAT;
+		}
+		dev_info(bcdev->dev, "%s init id_state:%d\n", __func__, bcdev->id_state);
+	}
+
+	if (!phandle_found) {
+		pr_err("no extcon device found\n");
+		return -ENODEV;
+	}
+
+	return 0;
 }
 
 static int battery_chg_probe(struct platform_device *pdev)
@@ -2023,6 +3229,17 @@ static int battery_chg_probe(struct platform_device *pdev)
 	init_completion(&bcdev->fw_update_ack);
 	INIT_WORK(&bcdev->subsys_up_work, battery_chg_subsys_up_work);
 	INIT_WORK(&bcdev->usb_type_work, battery_chg_update_usb_type_work);
+	/* add for fast_capacity start */
+	INIT_DELAYED_WORK(&bcdev->report_fast_capacity_work, battery_chg_report_fast_capacity_work);
+	INIT_WORK(&bcdev->update_prop_work, battery_chg_update_prop_work);
+	bcdev->fast_capacity = -EINVAL;
+	bcdev->discharging_smooth = false;
+	/* add for fast_capacity end */
+	INIT_DELAYED_WORK(&bcdev->screen_on_select_fcc_work, battery_chg_screen_on_select_fcc_work);
+#ifdef ZTE_CHARGER_EXT_BATTERY
+	INIT_DELAYED_WORK(&bcdev->update_soc_work, battery_chg_update_soc_work);
+	schedule_delayed_work(&bcdev->update_soc_work, msecs_to_jiffies(UPDATE_SOC_WORK_TIME_MS));
+#endif
 	atomic_set(&bcdev->state, PMIC_GLINK_STATE_UP);
 	bcdev->dev = dev;
 
@@ -2041,9 +3258,19 @@ static int battery_chg_probe(struct platform_device *pdev)
 		return rc;
 	}
 
+	bcdev->charging_enabled = true;
+	bcdev->battery_charging_enabled = true;
+	bcdev->oem_battery_type = OEM_BATTERY_TYPE_NORMAL;
+	bcdev->screen_is_on = true;
+	bcdev->resistance_id = 0;
+	bcdev->recharge_soc = 0;
+	bcdev->usb_suspend = false;
+	bcdev->curr_thermal_level = 0;
 	bcdev->initialized = true;
 	bcdev->reboot_notifier.notifier_call = battery_chg_ship_mode;
 	bcdev->reboot_notifier.priority = 255;
+	bcdev->healthd_batt_prop_masks = 0;
+	bcdev->healthd_usb_prop_masks = 0;
 	register_reboot_notifier(&bcdev->reboot_notifier);
 
 	rc = battery_chg_parse_dt(bcdev);
@@ -2067,12 +3294,32 @@ static int battery_chg_probe(struct platform_device *pdev)
 		goto error;
 	}
 
+#if IS_ENABLED(CONFIG_VENDOR_ZTE_MISC)
+	zte_misc_register_callback(&screen_on_node, (void *)bcdev);
+	zte_misc_register_callback(&oem_charger_type_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_nu_cep_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_nu_iout_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_nu_usbtype_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_nu_vout_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_nu_vrect_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_boost_en_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_nu_fw_update_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_nu_ver_node, (void *)bcdev);
+	zte_misc_register_callback(&wls_nu_sleep_node, (void *)bcdev);
+#endif
+
 	battery_chg_add_debugfs(bcdev);
 	battery_chg_notify_enable(bcdev);
 	device_init_wakeup(bcdev->dev, true);
 	rc = register_extcon_conn_type(bcdev);
 	if (rc < 0)
 		dev_warn(dev, "Failed to register extcon rc=%d\n", rc);
+
+	rc = battery_chg_extcon_register_notifier(bcdev);
+	if (rc < 0)
+		dev_err(dev, "Failed to register extcon notifier rc=%d\n", rc);
+	else
+		INIT_WORK(&bcdev->extcon_notify_work, battery_chg_extcon_notify_work);
 
 	if (bcdev->connector_type == USB_CONNECTOR_TYPE_MICRO_USB) {
 		bcdev->typec_class = qti_typec_class_init(bcdev->dev);
