@@ -22,6 +22,16 @@
 
 #include "power.h"
 
+/* zte_pm add for sync */
+#include <linux/syscalls.h>
+#include <linux/suspend.h>
+
+static int suspend_sys_sync_count;
+static DEFINE_SPINLOCK(suspend_sys_sync_lock);
+static struct workqueue_struct *suspend_sys_sync_work_queue;
+static DECLARE_COMPLETION(suspend_sys_sync_comp);
+/* zte_pm add for sync */
+
 static DEFINE_MUTEX(wakelocks_lock);
 
 struct wakelock {
@@ -32,6 +42,19 @@ struct wakelock {
 	struct list_head	lru;
 #endif
 };
+
+/* zte_pm add for sync */
+static int __init sys_sync_queue_init(void)
+{
+	int ret = 0;
+
+	suspend_sys_sync_work_queue =
+		create_singlethread_workqueue("suspend_sys_sync");
+	if (suspend_sys_sync_work_queue == NULL)
+		ret = -ENOMEM;
+
+	return ret;
+}
 
 static struct rb_root wakelocks_tree = RB_ROOT;
 
@@ -286,3 +309,71 @@ int pm_wake_unlock(const char *buf)
 	mutex_unlock(&wakelocks_lock);
 	return ret;
 }
+
+/* zte_pm add for sync- begin */
+static void suspend_sys_sync(struct work_struct *work)
+{
+	pr_info("PM: Syncing filesystems(OEM)...\n");
+
+	ksys_sync();
+
+	pr_info("sync done(OEM).\n");
+
+	spin_lock(&suspend_sys_sync_lock);
+	suspend_sys_sync_count--;
+	spin_unlock(&suspend_sys_sync_lock);
+}
+static DECLARE_WORK(suspend_sys_sync_work, suspend_sys_sync);
+
+void suspend_sys_sync_queue(void)
+{
+	int ret;
+
+	spin_lock(&suspend_sys_sync_lock);
+	ret = queue_work(suspend_sys_sync_work_queue, &suspend_sys_sync_work);
+	if (ret)
+		suspend_sys_sync_count++;
+	spin_unlock(&suspend_sys_sync_lock);
+}
+
+static bool suspend_sys_sync_abort;
+static void suspend_sys_sync_handler(struct timer_list *unused);
+static DEFINE_TIMER(suspend_sys_sync_timer, suspend_sys_sync_handler);
+/* value should be less then half of input event wake lock timeout value
+ * which is currently set to 5*HZ (see drivers/input/evdev.c)
+ */
+#define SUSPEND_SYS_SYNC_TIMEOUT (HZ/4)
+static void suspend_sys_sync_handler(struct timer_list *unused)
+{
+	if (suspend_sys_sync_count == 0) {
+		complete(&suspend_sys_sync_comp);
+	} else if (pm_wakeup_pending()) {
+		suspend_sys_sync_abort = true;
+		complete(&suspend_sys_sync_comp);
+	} else {
+		mod_timer(&suspend_sys_sync_timer, jiffies +
+						SUSPEND_SYS_SYNC_TIMEOUT);
+	}
+}
+
+int suspend_sys_sync_wait(void)
+{
+	suspend_sys_sync_abort = false;
+	/* ZTE add, presistently sync in each (HZ/4)*jiffies, avoid exit */
+	pm_wakeup_clear(true);
+
+	if (suspend_sys_sync_count != 0) {
+		mod_timer(&suspend_sys_sync_timer, jiffies +
+				SUSPEND_SYS_SYNC_TIMEOUT);
+		wait_for_completion(&suspend_sys_sync_comp);
+	}
+	if (suspend_sys_sync_abort) {
+		pr_info("suspend aborted....while waiting for sys_sync(OEM)\n");
+		return -EAGAIN;
+	}
+
+	return 0;
+}
+
+core_initcall(sys_sync_queue_init);
+/* zte_pm add for sync-end */

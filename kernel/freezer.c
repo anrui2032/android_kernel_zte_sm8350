@@ -61,6 +61,9 @@ bool __refrigerator(bool check_kthr_stop)
 	long save = current->state;
 
 	pr_debug("%s entered refrigerator\n", current->comm);
+	if (system_state != SYSTEM_SUSPEND && current->real_cred != NULL && current->real_cred->uid.val > 1000) {
+		pr_info("%s entered refrigerator  tid = %d uid= %d\n", current->comm, current->pid, current->real_cred->uid.val);
+	}
 
 	for (;;) {
 		set_current_state(TASK_UNINTERRUPTIBLE);
@@ -79,7 +82,9 @@ bool __refrigerator(bool check_kthr_stop)
 	}
 
 	pr_debug("%s left refrigerator\n", current->comm);
-
+	if (system_state != SYSTEM_SUSPEND && current->real_cred != NULL && current->real_cred->uid.val > 1000) {
+		pr_info("%s left refrigerator  tid = %d uid= %d\n", current->comm, current->pid, current->real_cred->uid.val);
+	}
 	/*
 	 * Restore saved task state before returning.  The mb'd version
 	 * needs to be used; otherwise, it might silently break
@@ -174,3 +179,15 @@ bool set_freezable(void)
 	return try_to_freeze();
 }
 EXPORT_SYMBOL(set_freezable);
+
+/**** ZSW_ADD FOR CPUFREEZER begin ****/
+void acquire_freezer_lock(void)
+{
+	spin_lock_irq(&freezer_lock);
+}
+
+void release_freezer_lock(void)
+{
+	spin_unlock_irq(&freezer_lock);
+}
+/**** ZSW_ADD FOR CPUFREEZER end ****/
