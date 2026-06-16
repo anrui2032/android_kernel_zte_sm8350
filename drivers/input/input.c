@@ -32,6 +32,7 @@ MODULE_LICENSE("GPL");
 
 #define INPUT_MAX_CHAR_DEVICES		1024
 #define INPUT_FIRST_DYNAMIC_DEV		256
+#define TP_DEV_NAME			"goodix_ts"
 static DEFINE_IDA(input_ida);
 
 static LIST_HEAD(input_dev_list);
@@ -2048,6 +2049,8 @@ ktime_t *input_get_timestamp(struct input_dev *dev)
 
 	if (!ktime_compare(dev->timestamp[INPUT_CLK_MONO], invalid_timestamp))
 		input_set_timestamp(dev, ktime_get());
+	else if (!strcmp(dev->name, TP_DEV_NAME))
+		input_set_timestamp(dev, ktime_set(0, 0));
 
 	return dev->timestamp;
 }

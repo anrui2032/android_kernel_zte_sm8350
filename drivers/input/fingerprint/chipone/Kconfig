@@ -1,0 +1,4 @@
+config CHIPONE_FINGERPRINT
+	tristate "Chipone Finger Print Driver"
+	help
+	  Chipone Finger Print Supported

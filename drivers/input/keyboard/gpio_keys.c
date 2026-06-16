@@ -371,6 +371,10 @@ static void gpio_keys_gpio_report_event(struct gpio_button_data *bdata)
 		if (state)
 			input_event(input, type, button->code, button->value);
 	} else {
+		if (type == EV_KEY) {
+			dev_err(input->dev.parent,
+				"[volume key]:button->code = %d, button->gpio = %d\n", button->code, button->gpio);
+		}
 		input_event(input, type, *bdata->code, state);
 	}
 	input_sync(input);
