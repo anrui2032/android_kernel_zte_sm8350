@@ -7706,7 +7706,7 @@ int dsi_display_set_mode(struct dsi_display *display,
 	}
 
 #ifdef CONFIG_ZTE_LCD_REPORT_CURRENT_FPS
-	display->panel->zte_lcd_ctrl->zte_lcd_cur_fps = timing.refresh_rate;
+	display->panel->zte_lcd_ctrl->zte_lcd_new_fps = timing.refresh_rate;
 	zte_panel_fps_send_uevent(timing.refresh_rate);
 #endif
 #ifdef CONFIG_ZTE_LCD_LEIA_EN_GPIO
