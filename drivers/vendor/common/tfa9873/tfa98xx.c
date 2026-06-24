@@ -2851,21 +2851,21 @@ enum Tfa98xx_Error tfa98xx_adsp_send_calib_values(void)
 	int value = 0, nr, dsp_cal_value = 0;
     int speaker_count = tfa98xx_device_count;
 
-    if (speaker_count >2)
-        speaker_count = 2;
+	if (speaker_count >2)
+		speaker_count = 2;
 
 	/* if the calibration value was sent to host DSP, we clear flag only (stereo case). */
 	if ((tfa98xx_device_count > 1) && (called_count != 0)) {
 		pr_info("The calibration value was sent to host DSP inst0 %s.\n",
-            (bytes_inst1[0]>0)?"and inst1":"" );
-        if (tfa98xx_device_count <= (called_count+1)) {
-    		bytes_inst0[0] = 0;
-            bytes_inst1[0] = 0;
-            called_count = 0;
-        }
+			(bytes_inst1[0]>0)?"and inst1":"" );
+		if (tfa98xx_device_count <= (called_count+1)) {
+			bytes_inst0[0] = 0;
+			bytes_inst1[0] = 0;
+			called_count = 0;
+		}
 		return Tfa98xx_Error_Ok;
 	}
-    called_count++;
+	called_count++;
 
 	/* read calibrated impendance from all devices. */
 	list_for_each_entry(tfa98xx, &tfa98xx_device_list, list) {
