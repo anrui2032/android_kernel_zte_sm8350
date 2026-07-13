@@ -321,6 +321,10 @@ static int gsx_gesture_ist(struct goodix_ts_core *cd,
 		if (gs_event.gesture_type == GSX_DOUBLE_TAP && cd->ztec.is_wakeup_gesture) {
 			/* do resume routine */
 			ts_info("enter:double_gesture");
+			input_report_key(cd->input_dev, KEY_WAKEUP, 1);
+			input_sync(cd->input_dev);
+			input_report_key(cd->input_dev, KEY_WAKEUP, 0);
+			input_sync(cd->input_dev);
 			ufp_report_gesture_uevent(DOUBLE_TAP_GESTURE);
 		} else if (gs_event.gesture_type == GSX_SINGLE_TAP) {
 			ts_info("enter:single_gesture");
