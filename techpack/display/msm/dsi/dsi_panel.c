@@ -753,6 +753,33 @@ static u32 dsi_panel_get_fod_dim_alpha(struct dsi_panel *panel)
 			   panel->fod_dim_lut[i].alpha);
 }
 
+int dsi_panel_exit_fod_hbm(struct dsi_panel *panel, u16 brightness)
+{
+	int rc;
+	u8 payload[2] = { brightness >> 8, brightness & 0xff };
+	struct mipi_dsi_device *dsi;
+
+	if (!panel) {
+		DSI_ERR("[MSM_LCD]: invalid params\n");
+		return -EINVAL;
+	}
+
+	dsi = &panel->mipi_device;
+
+	rc = mipi_dsi_dcs_write(dsi, MIPI_DCS_SET_DISPLAY_BRIGHTNESS, payload, sizeof(payload));
+
+	if (rc)
+		return rc;
+
+	panel->bl_config.real_bl_level = brightness;
+	pr_info("[MSM_LCD]: Restore brightness to %d\n", brightness);
+
+	if (brightness != 0)
+		g_zte_ctrl_pdata->zte_lcd_ctrl->hbm_exit_need_dim = 1;
+
+	return 0;
+}
+
 int dsi_panel_set_fod_hbm(struct dsi_panel *panel, bool status)
 {
 	int rc;
@@ -764,12 +791,7 @@ int dsi_panel_set_fod_hbm(struct dsi_panel *panel, bool status)
 
 		panel->fod_hbm_enabled = true;
 	} else {
-		rc = dsi_panel_set_backlight(panel,
-					     panel->bl_config.real_bl_level);
-		if (rc)
-			return rc;
-
-		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_ZTE_HBM_OFF);
+		rc = dsi_panel_exit_fod_hbm(panel, panel->bl_config.real_bl_level);
 		if (rc)
 			return rc;
 
