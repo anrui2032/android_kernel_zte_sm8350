@@ -810,6 +810,7 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 {
 	int rc = 0;
 	struct dsi_backlight_config *bl = &panel->bl_config;
+	u32 lut_bl_lvl = bl_lvl;
 #if defined(CONFIG_ZTE_LCD_BACKLIGHT_LEVEL_CURVE)
 	u32 pre_lvl = 0;
 #endif
@@ -879,7 +880,20 @@ int dsi_panel_set_backlight(struct dsi_panel *panel, u32 bl_lvl)
 
 	bl->real_bl_level = bl_lvl;
 
-	panel->fod_dim_alpha = dsi_panel_calc_fod_dim_alpha(panel, bl_lvl);
+	/*
+	 * qcom,fod-dim-lut is keyed on the Android brightness slider
+	 * (0 .. brightness_max_level, 255 here) while bl_lvl now lives in the
+	 * panel DCS scale (0 .. bl_max_level, 2047 here).  Use the value
+	 * captured at entry: sde_connector already scaled the slider up
+	 * linearly, and the ZTE curve after it is non-linear, so only the
+	 * entry value can be mapped back to the slider position.
+	 */
+	if (bl->bl_max_level && lut_bl_lvl > bl->brightness_max_level)
+		lut_bl_lvl = lut_bl_lvl * bl->brightness_max_level / bl->bl_max_level;
+
+	panel->fod_dim_alpha = dsi_panel_calc_fod_dim_alpha(panel, lut_bl_lvl);
+	pr_info("[MSM_LCD] fod dim: bl=%u slider=%u alpha=%u\n",
+		bl_lvl, lut_bl_lvl, panel->fod_dim_alpha);
 
 	return rc;
 }

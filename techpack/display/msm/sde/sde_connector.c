@@ -929,6 +929,11 @@ static void sde_connector_pre_update_fod_hbm(struct sde_connector *c_conn)
 
 	dsi_panel_set_fod_hbm(panel, status);
 
+	/* give the HBM off sequence a frame to land before the compositor
+	 * scans out the frame that no longer carries the FOD dimming */
+	if (!status && refresh_rate >= 120)
+		sde_encoder_wait_for_event(c_conn->encoder, MSM_ENC_VBLANK);
+
 	dsi_panel_set_fod_ui(panel, status);
 }
 
