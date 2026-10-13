@@ -1253,8 +1253,10 @@ static int brl_event_handler(struct goodix_ts_core *cd,
 	event_status = pre_buf[0];
 	if (event_status & GOODIX_TOUCH_EVENT) {
 		if (event_status & GOODIX_FP_EVENT) {
+			goodix_ts_fod_pressed_notify(cd, true);
 			report_ufp_uevent(UFP_FP_DOWN);
 		} else {
+			goodix_ts_fod_pressed_notify(cd, false);
 			report_ufp_uevent(UFP_FP_UP);
 		}
 		return goodix_touch_handler(cd, ts_event,

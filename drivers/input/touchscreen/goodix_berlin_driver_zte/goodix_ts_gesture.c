@@ -309,9 +309,11 @@ static int gsx_gesture_ist(struct goodix_ts_core *cd,
 			gs_event.gesture_type);*/
 
 	if (gs_event.gesture_type == GSX_FP_TAP_AOD) {
+		goodix_ts_fod_pressed_notify(cd, true);
 		report_ufp_uevent(UFP_FP_DOWN);
 		goto gesture_ist_exit;
 	} else if (gs_event.gesture_type == GSX_FP_UP_AOD) {
+		goodix_ts_fod_pressed_notify(cd, false);
 		report_ufp_uevent(UFP_FP_UP);
 		goto gesture_ist_exit;
 	}

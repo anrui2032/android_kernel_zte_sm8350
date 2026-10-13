@@ -779,6 +779,23 @@ static ssize_t goodix_ts_irq_info_store(struct device *dev,
 	return count;
 }
 
+static ssize_t goodix_ts_fod_pressed_show(struct device *dev,
+					  struct device_attribute *attr, char *buf)
+{
+	struct goodix_ts_core *core_data = dev_get_drvdata(dev);
+
+	return snprintf(buf, PAGE_SIZE, "%u\n", core_data->fod_pressed);
+}
+
+void goodix_ts_fod_pressed_notify(struct goodix_ts_core *core_data, bool pressed)
+{
+	if (!core_data)
+		return;
+
+	core_data->fod_pressed = pressed;
+	sysfs_notify(&core_data->pdev->dev.kobj, NULL, "goodix_fod_pressed");
+}
+
 /* switch config */
 static ssize_t goodix_ts_switch_config_store(struct device *dev,
 				struct device_attribute *attr,
@@ -825,6 +842,7 @@ static DEVICE_ATTR(reg_rw, S_IRUGO | S_IWUSR | S_IWGRP,
 					goodix_ts_reg_rw_show, goodix_ts_reg_rw_store);
 static DEVICE_ATTR(irq_info, S_IRUGO | S_IWUSR | S_IWGRP,
 		   goodix_ts_irq_info_show, goodix_ts_irq_info_store);
+static DEVICE_ATTR(goodix_fod_pressed, S_IRUGO, goodix_ts_fod_pressed_show, NULL);
 static DEVICE_ATTR(switch_config, 0664, NULL, goodix_ts_switch_config_store);
 
 static struct attribute *sysfs_attrs[] = {
@@ -836,6 +854,7 @@ static struct attribute *sysfs_attrs[] = {
 	&dev_attr_reg_rw.attr,
 	&dev_attr_irq_info.attr,
 	&dev_attr_switch_config.attr,
+	&dev_attr_goodix_fod_pressed.attr,
 	NULL,
 };
 

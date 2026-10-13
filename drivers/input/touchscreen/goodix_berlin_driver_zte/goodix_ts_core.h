@@ -517,6 +517,7 @@ struct goodix_ts_core {
 	struct notifier_block fb_notifier;
 #endif
 	struct mutex mutex_cmd;
+	bool fod_pressed;
 };
 
 /* external module structures */
@@ -664,6 +665,8 @@ int goodix_unregister_ext_module(struct goodix_ext_module *module);
  * return 0 on success, otherwise return < 0
  */
 int goodix_unregister_all_module(void);
+void goodix_ts_fod_pressed_notify(struct goodix_ts_core *core_data, bool pressed);
+
 int goodix_ts_blocking_notify(enum ts_notify_event evt, void *v);
 struct kobj_type *goodix_get_default_ktype(void);
 struct kobject *goodix_get_default_kobj(void);
